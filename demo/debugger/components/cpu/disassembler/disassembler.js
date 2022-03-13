@@ -57,9 +57,9 @@ let updateTask = async () => {
         isCb = true;
         params.push(gbMemory[i + 1]);
       } else {
-        if (gbOpcodeParams.includes('d8')) {
+        if (gbOpcodeParams.includes('d8') || gbOpcodeParams.includes('n8')) {
           params.push(gbMemory[i + 1]);
-        } else if (gbOpcodeParams.includes('d16')) {
+        } else if (gbOpcodeParams.includes('d16') || gbOpcodeParams.includes('n16')) {
           params.push(gbMemory[i + 1]);
           params.push(gbMemory[i + 2]);
         }
@@ -285,6 +285,7 @@ export default class Disassembler extends Component {
 
   renderRow(row) {
     let paramColumn = <div class="virtual-list-widget__list__virtual__row__hex virtual-list-widget__list-cell" />;
+    let paramAdded = '';
     if (row.params && row.params.length > 0) {
       let paramValue = row.params[0];
       if (row.params[1]) {
@@ -299,6 +300,18 @@ export default class Disassembler extends Component {
             .padStart(2, '0')}
         </div>
       );
+
+      paramAdded = row.gbOpcode.params
+        .map(p =>
+          p == 'n8' || p == 'd8' || p == 'n16' || p == 'd16'
+            ? '$' +
+              paramValue
+                .toString(16)
+                .toUpperCase()
+                .padStart(2, '0')
+            : p
+        )
+        .join(' ');
     }
 
     // Our classes for the row
@@ -321,7 +334,9 @@ export default class Disassembler extends Component {
             <div>ℹ️</div>
           </button>
         </div>
-        <div class="disassembler__list__virtual__row__mnemonic virtual-list-widget__list-cell">{row.mnemonic}</div>
+        <div class="disassembler__list__virtual__row__mnemonic virtual-list-widget__list-cell">
+          {row.mnemonic} {paramAdded}
+        </div>
         <div class="disassembler__list__virtual__row__cycles virtual-list-widget__list-cell">{row.cycles}</div>
         <div class="virtual-list-widget__list__virtual__row__hex virtual-list-widget__list-cell">
           {row.address
