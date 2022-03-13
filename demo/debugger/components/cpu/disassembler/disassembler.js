@@ -37,7 +37,6 @@ let updateTask = async () => {
   gbMemory = await WasmBoy._getWasmMemorySection(gbMemoryStart, gbMemoryEnd);
 
   // Build our rows
-  let address = 0;
   for (let i = 0; i < gbMemory.length; i++) {
     const opcode = gbMemory[i];
     const gbOpcode = GBOpcodes.getOpcode(opcode);
@@ -66,7 +65,7 @@ let updateTask = async () => {
       }
 
       data[i] = {
-        address: address,
+        address: i,
         data: gbMemory[i],
         isCb,
         params,
@@ -74,14 +73,7 @@ let updateTask = async () => {
         cycles,
         gbOpcode
       };
-
-      address++;
-      address += params.length;
-
-      // Make sure we don't exceed our total memory
-      if (address > 0xffff) {
-        i = gbMemory.length;
-      }
+      i += params.length;
     }
   }
 
