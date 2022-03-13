@@ -79,7 +79,12 @@ export default class ValueTable extends Component {
       keyRows.push(
         <tr>
           <th>{objectKey}</th>
-          <td>0x{this.getValueWithBase(this.state.object[objectKey], 16)}</td>
+          <td>
+            0x
+            {this.getValueWithBase(this.state.object[objectKey], 16)
+              .toUpperCase()
+              .padStart(2, '0')}
+          </td>
           <td>{this.getValueWithBase(this.state.object[objectKey], 2)}</td>
           <td>{this.getValueWithBase(this.state.object[objectKey], 10)}</td>
         </tr>
