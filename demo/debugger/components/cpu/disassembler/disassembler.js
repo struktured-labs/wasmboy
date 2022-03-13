@@ -176,7 +176,9 @@ export default class Disassembler extends Component {
 
   stepOpcode() {
     stepOpcode();
-    this.update();
+    // Triggering the `update` event to make sure other views are updated with
+    // every step.
+    Pubx.get(PUBX_KEYS.WASMBOY).update();
     Pubx.get(PUBX_KEYS.NOTIFICATION).showNotification('Stepped Opcode! 😄');
   }
 
@@ -202,7 +204,7 @@ export default class Disassembler extends Component {
     const runOpcodesPromise = runNumberOfOpcodes(numberOfOpcodes);
     runOpcodesPromise.then(() => {
       Pubx.get(PUBX_KEYS.NOTIFICATION).showNotification(`Ran ${numberOfOpcodes} opcodes! 😄`);
-      this.update();
+      Pubx.get(PUBX_KEYS.WASMBOY).update();
       this.setState({
         running: false
       });
