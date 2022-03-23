@@ -39,7 +39,7 @@ let updateTask = async () => {
   // Build our rows
   for (let i = 0; i < gbMemory.length; i++) {
     const opcode = gbMemory[i];
-    const gbOpcode = GBOpcodes.getOpcode(opcode);
+    const gbOpcode = opcode == 0xcb ? GBOpcodes.getCbOpcode(gbMemory[i + 1]) : GBOpcodes.getOpcode(opcode);
     let gbOpcodeParams = [];
     if (gbOpcode) {
       let cycles = gbOpcode.cycles;
@@ -64,7 +64,7 @@ let updateTask = async () => {
         }
       }
 
-      data[i] = {
+      data.push({
         address: i,
         data: gbMemory[i],
         isCb,
@@ -72,7 +72,7 @@ let updateTask = async () => {
         mnemonic: gbOpcode.instruction.mnemonic,
         cycles,
         gbOpcode
-      };
+      });
       i += params.length;
     }
   }
