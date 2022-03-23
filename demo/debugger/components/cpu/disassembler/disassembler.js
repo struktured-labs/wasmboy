@@ -280,22 +280,28 @@ export default class Disassembler extends Component {
   renderRow(row) {
     let paramColumn = <div class="virtual-list-widget__list__virtual__row__hex virtual-list-widget__list-cell" />;
     let paramAdded = '';
-    if (row.params && row.params.length > 0) {
-      let paramValue = row.params[0];
-      if (row.params[1]) {
-        paramValue = (row.params[1] << 8) + paramValue;
+    const opParams = row.gbOpcode.params;
+    // NOTE: row.params only includes immediate params. To make sure we show
+    // non-immedate params, we instead check opcode information.
+    if (opParams.length) {
+      let paramValue;
+      if (row.params && row.params.length > 0) {
+        paramValue = row.params[0];
+        if (row.params[1]) {
+          paramValue = (row.params[1] << 8) + paramValue;
+        }
+
+        paramColumn = (
+          <div class="virtual-list-widget__list__virtual__row__hex virtual-list-widget__list-cell">
+            {paramValue
+              .toString(16)
+              .toUpperCase()
+              .padStart(2, '0')}
+          </div>
+        );
       }
 
-      paramColumn = (
-        <div class="virtual-list-widget__list__virtual__row__hex virtual-list-widget__list-cell">
-          {paramValue
-            .toString(16)
-            .toUpperCase()
-            .padStart(2, '0')}
-        </div>
-      );
-
-      paramAdded = row.gbOpcode.params
+      paramAdded = opParams
         .map(p =>
           p == 'n8' || p == 'd8' || p == 'n16' || p == 'd16'
             ? '$' +
