@@ -2,9 +2,9 @@
 }
 
 .memory-viewer__container {
-  min-width: 300px;
-  width: 300px;
-  max-width: 300px;
+  min-width: var(--memory-viewer-width);
+  width: var(--memory-viewer-width);
+  max-width: var(--memory-viewer-width);
 }
 
 /* Variables for our psuedo table */
@@ -30,4 +30,8 @@
 
 .memory-viewer__list__virtual__row__breakpoint > button {
   width: 50px !important;
+}
+
+.memory-viewer-row-highlight .virtual-list-widget__list__virtual__row__hex:last-child {
+  background: #ff7f7f;
 }

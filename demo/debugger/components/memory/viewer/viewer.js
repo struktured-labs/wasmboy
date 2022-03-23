@@ -66,8 +66,10 @@ export default class MemoryViewer extends Component {
     this.state.writeBreakpoint = -1;
     this.state.wasmboy = {};
     this.state.loading = {};
+    this.state.snapshotComparison = 'notEqual';
 
     this.data = [];
+    this.snapshot = null;
   }
 
   componentDidMount() {
@@ -172,10 +174,55 @@ export default class MemoryViewer extends Component {
     }
   }
 
+  takeSnapshot(data) {
+    this.snapshot = data ? Array.from(data) : null;
+    // Trigger a re-render.
+    this.setState({});
+  }
+
+  changeSnapshotComparison = event => {
+    this.setState({
+      snapshotComparison: event.target.value
+    });
+  };
+
+  shouldHightlightAddress(address) {
+    if (!this.snapshot) {
+      return false;
+    }
+    const s = this.snapshot[address].value;
+    const d = this.data[address].value;
+    switch (this.state.snapshotComparison) {
+      case 'equal':
+        return d == s;
+      case 'notEqual':
+        return d != s;
+      case 'lessThan':
+        return d < s;
+      case 'lessThanEqual':
+        return d <= s;
+      case 'greaterThan':
+        return d > s;
+      case 'greaterThanEqual':
+        return d >= s;
+      default:
+        return false;
+    }
+  }
+
   renderRow(row) {
     // Our classes for the row
     const classes = ['virtual-list-widget__list__virtual__row'];
     classes.push(`memory-viewer-row-${row.address}`);
+    if (this.shouldHightlightAddress(row.address)) {
+      classes.push(`memory-viewer-row-highlight`);
+    }
+    const title = this.snapshot
+      ? `Snapshot value ${this.snapshot[row.address].value
+          .toString(16)
+          .toUpperCase()
+          .padStart(2, '0')}`
+      : '';
 
     // The row height needs to be forced, or will mess up virtual list overscan
     // Height is set in CSS for performance
@@ -196,7 +243,7 @@ export default class MemoryViewer extends Component {
             .toUpperCase()
             .padStart(4, '0')}
         </div>
-        <div class="virtual-list-widget__list__virtual__row__hex virtual-list-widget__list-cell">
+        <div class="virtual-list-widget__list__virtual__row__hex virtual-list-widget__list-cell" title={title}>
           {row.value
             .toString(16)
             .toUpperCase()
@@ -216,6 +263,23 @@ export default class MemoryViewer extends Component {
     }
     if (this.state.running) {
       classes.push('virtual-list-widget--running');
+    }
+
+    let snapshotControls;
+    if (this.snapshot) {
+      snapshotControls = (
+        <span>
+          <button onClick={() => this.takeSnapshot(null)}>Clear</button>
+          <select value={this.state.snapshotComparison} onChange={this.changeSnapshotComparison}>
+            <option value="equal">Equal (==)</option>
+            <option value="notEqual">Not Equal (!=)</option>
+            <option value="lessThan">Less Than (&lt;)</option>
+            <option value="lessThanEqual">Less Than Equals (&lt;=)</option>
+            <option value="greaterThan">Greater Than (&gt;)</option>
+            <option value="greaterThanEqual">Greater Than Equals (&gt;=)</option>
+          </select>
+        </span>
+      );
     }
 
     return (
@@ -270,6 +334,10 @@ export default class MemoryViewer extends Component {
               maxlength="4"
               onSubmit={value => this.scrollToAddress(parseInt(value, 16))}
             />
+          </div>
+          <div class="virtual-list-widget__control">
+            <button onClick={() => this.takeSnapshot(this.data)}>Take Memory Snapshot</button>
+            {snapshotControls}
           </div>
 
           <div class="virtual-list-widget__header-list">
