@@ -1,0 +1,71 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # .npmrc sets legacy-peer-deps, which the rollup 0.66 plugin chain needs.
+      - name: Install
+        run: npm ci
+
+      - name: Build core
+        run: npm run core:build
+
+      - name: Build lib
+        run: |
+          npm run lib:build:wasm
+          npm run lib:build:ts
+
+      - name: Build demos
+        run: |
+          npm run debugger:build
+          npm run iframe:build
+          npm run benchmark:build
+
+      - name: Check types
+        run: npm run test:types
+
+      - name: Check formatting
+        run: npm run prettier:lint
+
+      # The suites run against the artifacts built above, so they use the
+      # :nobuild variants rather than rebuilding three more times.
+      - name: Test core
+        run: npm run test:core:nobuild
+
+      - name: Test integration
+        run: npm run test:integration:nobuild
+
+      - name: Test debugger
+        run: npm run test:debugger
+
+      # Slowest suite last: it runs 25 test ROMs against golden frame output.
+      - name: Test accuracy
+        run: npm run test:accuracy:nobuild
+
+      # Golden comparisons write the frame they actually produced, so on a
+      # failure the rendered output is more useful than the log.
+      - name: Upload frames from failed runs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-frames
+          path: |
+            test/**/*.png
+            test/**/*.golden.output.json
+          retention-days: 7

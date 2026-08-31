@@ -29,6 +29,7 @@
 
 - [Features](#features)
 - [Usage](#usage)
+  - [Loading a ROM](#loading-a-rom)
   - [Supported Platforms](#supported-platforms)
 - [In-Game Screenshots](#in-game-screenshots)
   - [Gameboy Support](#gameboy-support)
@@ -74,6 +75,47 @@ Simply install through npm:
 
 Documentation for the project can be found on the [WasmBoy Wiki](https://github.com/torch2424/wasmBoy/wiki).
 
+### Loading a ROM
+
+```javascript
+import { WasmBoy } from 'wasmboy';
+
+const canvas = document.querySelector('canvas');
+
+await WasmBoy.config(
+  {
+    isGbcEnabled: true,
+    isAudioEnabled: true
+  },
+  canvas
+);
+
+// Load a hosted ROM URL.
+await WasmBoy.loadROM('/roms/demo.gb');
+await WasmBoy.play();
+```
+
+You can also pass a `File` from an `<input type="file">` or a `Uint8Array` of ROM bytes to `WasmBoy.loadROM()`.
+
+### Strict CSP Assets
+
+The production browser bundle inlines worker and wasm assets by default. If your Content Security Policy does not allow `blob:` workers or `data:` wasm fetches, host the generated files yourself and pass their URLs during config:
+
+```js
+await WasmBoy.config({
+  workerUrls: {
+    lib: '/assets/wasmboy/worker/wasmboy.wasm.worker.js',
+    graphics: '/assets/wasmboy/worker/graphics.worker.js',
+    audio: '/assets/wasmboy/worker/audio.worker.js',
+    controller: '/assets/wasmboy/worker/controller.worker.js',
+    memory: '/assets/wasmboy/worker/memory.worker.js'
+  },
+  wasmCoreUrl: '/assets/wasmboy/core/core.untouched.wasm'
+});
+```
+
+Use `wasmboy.ts.worker.js` for `workerUrls.lib` when loading the TypeScript core bundle. The worker and wasm URLs must be reachable by the page and allowed by your CSP.
+
 ### Supported Platforms
 
 Try to test and aim for support on all major browsers (Chrome, Firefox, and Safari). Also, Node support works with the [`headless` option in the WasmBoy config](https://github.com/torch2424/wasmBoy/wiki/Lib-API#wasmboyoptions), and using the [Worker Threads](https://nodejs.org/api/worker_threads.html) `--experimental-worker` flag.
@@ -93,6 +135,8 @@ Try to test and aim for support on all major browsers (Chrome, Firefox, and Safa
 ### Debugger
 
 [Application Link](https://wasmboy.app/)
+
+To auto-load and play a hosted ROM, open the debugger with `?rom=<encoded-rom-url>`. You can set a display name with `romName`.
 
 A full debugger meant for analyzing the internals of the gameboy. Great for HomeBrew Gameboy Development, or using as a reference point for building your own GameBoy emulator. **See the gif at the top of the README for an example.**
 
@@ -233,7 +277,7 @@ Feel free to fork and submit PRs! Opening an issue is reccomended before startin
 
 ### Installation
 
-Just your standard node app. Install Node with [nvm](https://github.com/creationix/nvm), `git clone` the project, and `npm install`, and you should be good to go!
+Just your standard node app. Install Node 20+ and npm 10+ with [nvm](https://github.com/creationix/nvm), `git clone` the project, and `npm install`, and you should be good to go. The repo includes an `.npmrc` so modern npm uses the legacy peer dependency resolution required by the older Rollup/Svelte plugin graph.
 
 ### CLI Commands / Npm Scripts
 

@@ -37,10 +37,9 @@ let updateTask = async () => {
   gbMemory = await WasmBoy._getWasmMemorySection(gbMemoryStart, gbMemoryEnd);
 
   // Build our rows
-  let address = 0;
   for (let i = 0; i < gbMemory.length; i++) {
     const opcode = gbMemory[i];
-    const gbOpcode = GBOpcodes.getOpcode(opcode);
+    const gbOpcode = opcode == 0xcb ? GBOpcodes.getCbOpcode(gbMemory[i + 1]) : GBOpcodes.getOpcode(opcode);
     let gbOpcodeParams = [];
     if (gbOpcode) {
       let cycles = gbOpcode.cycles;
@@ -57,31 +56,24 @@ let updateTask = async () => {
         isCb = true;
         params.push(gbMemory[i + 1]);
       } else {
-        if (gbOpcodeParams.includes('d8')) {
+        if (gbOpcodeParams.includes('d8') || gbOpcodeParams.includes('n8')) {
           params.push(gbMemory[i + 1]);
-        } else if (gbOpcodeParams.includes('d16')) {
+        } else if (gbOpcodeParams.includes('d16') || gbOpcodeParams.includes('n16')) {
           params.push(gbMemory[i + 1]);
           params.push(gbMemory[i + 2]);
         }
       }
 
-      data[i] = {
-        address: address,
+      data.push({
+        address: i,
         data: gbMemory[i],
         isCb,
         params,
         mnemonic: gbOpcode.instruction.mnemonic,
         cycles,
         gbOpcode
-      };
-
-      address++;
-      address += params.length;
-
-      // Make sure we don't exceed our total memory
-      if (address > 0xffff) {
-        i = gbMemory.length;
-      }
+      });
+      i += params.length;
     }
   }
 
@@ -184,7 +176,9 @@ export default class Disassembler extends Component {
 
   stepOpcode() {
     stepOpcode();
-    this.update();
+    // Triggering the `update` event to make sure other views are updated with
+    // every step.
+    Pubx.get(PUBX_KEYS.WASMBOY).update();
     Pubx.get(PUBX_KEYS.NOTIFICATION).showNotification('Stepped Opcode! 😄');
   }
 
@@ -210,7 +204,7 @@ export default class Disassembler extends Component {
     const runOpcodesPromise = runNumberOfOpcodes(numberOfOpcodes);
     runOpcodesPromise.then(() => {
       Pubx.get(PUBX_KEYS.NOTIFICATION).showNotification(`Ran ${numberOfOpcodes} opcodes! 😄`);
-      this.update();
+      Pubx.get(PUBX_KEYS.WASMBOY).update();
       this.setState({
         running: false
       });
@@ -285,20 +279,39 @@ export default class Disassembler extends Component {
 
   renderRow(row) {
     let paramColumn = <div class="virtual-list-widget__list__virtual__row__hex virtual-list-widget__list-cell" />;
-    if (row.params && row.params.length > 0) {
-      let paramValue = row.params[0];
-      if (row.params[1]) {
-        paramValue = (row.params[1] << 8) + paramValue;
+    let paramAdded = '';
+    const opParams = row.gbOpcode.params;
+    // NOTE: row.params only includes immediate params. To make sure we show
+    // non-immedate params, we instead check opcode information.
+    if (opParams.length) {
+      let paramValue;
+      if (row.params && row.params.length > 0) {
+        paramValue = row.params[0];
+        if (row.params[1]) {
+          paramValue = (row.params[1] << 8) + paramValue;
+        }
+
+        paramColumn = (
+          <div class="virtual-list-widget__list__virtual__row__hex virtual-list-widget__list-cell">
+            {paramValue
+              .toString(16)
+              .toUpperCase()
+              .padStart(2, '0')}
+          </div>
+        );
       }
 
-      paramColumn = (
-        <div class="virtual-list-widget__list__virtual__row__hex virtual-list-widget__list-cell">
-          {paramValue
-            .toString(16)
-            .toUpperCase()
-            .padStart(2, '0')}
-        </div>
-      );
+      paramAdded = opParams
+        .map(p =>
+          p == 'n8' || p == 'd8' || p == 'n16' || p == 'd16'
+            ? '$' +
+              paramValue
+                .toString(16)
+                .toUpperCase()
+                .padStart(2, '0')
+            : p
+        )
+        .join(' ');
     }
 
     // Our classes for the row
@@ -321,7 +334,9 @@ export default class Disassembler extends Component {
             <div>ℹ️</div>
           </button>
         </div>
-        <div class="disassembler__list__virtual__row__mnemonic virtual-list-widget__list-cell">{row.mnemonic}</div>
+        <div class="disassembler__list__virtual__row__mnemonic virtual-list-widget__list-cell">
+          {row.mnemonic} {paramAdded}
+        </div>
         <div class="disassembler__list__virtual__row__cycles virtual-list-widget__list-cell">{row.cycles}</div>
         <div class="virtual-list-widget__list__virtual__row__hex virtual-list-widget__list-cell">
           {row.address

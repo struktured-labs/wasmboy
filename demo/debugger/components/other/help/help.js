@@ -18,6 +18,26 @@ export default class HelpComponent extends Component {
             </video>
           </div>
         </div>
+        <h2>Game Boy Controls</h2>
+        <div>
+          <ul>
+            <li>
+              <b>Arrow Keys, Numpad 8 / 6 / 5 / 4</b> - D-Pad
+            </li>
+            <li>
+              <b>X, C, Semicolon, Numpad 7</b> - A
+            </li>
+            <li>
+              <b>Z, V, Escape, Quote, Backspace, Numpad 9</b> - B
+            </li>
+            <li>
+              <b>Enter, Numpad 3</b> - Start
+            </li>
+            <li>
+              <b>Shift, Tab, Numpad 1</b> - Select
+            </li>
+          </ul>
+        </div>
         <h2>Hotkeys</h2>
         <div>
           <ul>

@@ -40,7 +40,7 @@ const WasmBoyJoypadState = {
 };
 
 const wait = time => {
-  new Promise(resolve => {
+  return new Promise(resolve => {
     setTimeout(resolve, time);
   });
 };
@@ -59,7 +59,7 @@ describe('WasmBoy Headless Simple', () => {
     await WasmBoy.loadROM(testRomArray);
 
     // Set our neatural joypad state
-    WasmBoy.setJoypadState({
+    await WasmBoy.setJoypadState({
       ...WasmBoyJoypadState
     });
 
@@ -73,7 +73,7 @@ describe('WasmBoy Headless Simple', () => {
     await commonTest.createImageFromFrame(startMenuImageDataArray, `./test/integration/headless-simple.start-menu.png`);
 
     // Make sure the start menu can be pressed
-    WasmBoy.setJoypadState({
+    await WasmBoy.setJoypadState({
       ...WasmBoyJoypadState,
       START: true
     });
@@ -82,7 +82,7 @@ describe('WasmBoy Headless Simple', () => {
     await WasmBoy._runWasmExport('executeMultipleFrames', [1]);
 
     // Reset the input
-    WasmBoy.setJoypadState({
+    await WasmBoy.setJoypadState({
       ...WasmBoyJoypadState
     });
 
@@ -94,7 +94,7 @@ describe('WasmBoy Headless Simple', () => {
     await commonTest.createImageFromFrame(levelSelectImageDataArray, `./test/integration/headless-simple.level-select.png`);
 
     // Select the Stage
-    WasmBoy.setJoypadState({
+    await WasmBoy.setJoypadState({
       ...WasmBoyJoypadState,
       A: true
     });
@@ -103,7 +103,7 @@ describe('WasmBoy Headless Simple', () => {
     await WasmBoy._runWasmExport('executeMultipleFrames', [1]);
 
     // Reset the input
-    WasmBoy.setJoypadState({
+    await WasmBoy.setJoypadState({
       ...WasmBoyJoypadState
     });
 

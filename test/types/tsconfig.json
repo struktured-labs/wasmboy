@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "strict": true,
+    "moduleResolution": "node",
+    "target": "ES2018",
+    "module": "ES2015",
+    "lib": ["ES2018", "DOM", "DOM.Iterable"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["./**/*.ts", "../../lib/types/**/*.d.ts"]
+}

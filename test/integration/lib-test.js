@@ -19,6 +19,37 @@ const WASMBOY_INITIALIZE_OPTIONS = {
   isGbcEnabled: true
 };
 
+const createFakeCanvas = () => {
+  const context = {
+    createImageData: (width, height) => ({
+      data: new Uint8ClampedArray(width * height * 4)
+    }),
+    clearRect: () => {},
+    putImageData: () => {}
+  };
+
+  return {
+    width: 0,
+    height: 0,
+    style: '',
+    getContext: type => {
+      assert.strictEqual(type, '2d');
+      return context;
+    }
+  };
+};
+
+const WasmBoyJoypadState = {
+  UP: false,
+  RIGHT: false,
+  DOWN: false,
+  LEFT: false,
+  A: false,
+  B: false,
+  SELECT: false,
+  START: false
+};
+
 // Function for playing WasmBoy for a short amount of time
 const playWasmBoy = () => {
   let playResolve = undefined;
@@ -62,6 +93,17 @@ describe('WasmBoy Lib', () => {
       });
   });
 
+  it('should initialize work ram with random garbage bytes', async () => {
+    const workRamLocation = await WasmBoy._getWasmConstant('WORK_RAM_LOCATION');
+    const workRamSize = await WasmBoy._getWasmConstant('WORK_RAM_SIZE');
+    const workRam = await WasmBoy._getWasmMemorySection(workRamLocation, workRamLocation + workRamSize);
+
+    assert(
+      workRam.some(value => value !== 0),
+      true
+    );
+  });
+
   it('should be able to save/load state', async () => {
     // Play a snippet of WasmBoy
     await playWasmBoy();
@@ -84,5 +126,139 @@ describe('WasmBoy Lib', () => {
     for (let i = 0; i < saveStateInternalState.length; i++) {
       assert(saveStateInternalState[i] === saveStateTwoInternalState[i], true);
     }
+  });
+
+  it('should load a ROM from a file path in headless mode', async () => {
+    await WasmBoy.config(WASMBOY_INITIALIZE_OPTIONS);
+    await WasmBoy.loadROM(`${testRomsPath}/back-to-color/back-to-color.gbc`);
+
+    assert.strictEqual(WasmBoy.isReady(), true);
+  });
+
+  it('should report playing state inside the onPlay callback', async () => {
+    let onPlayIsPlaying = undefined;
+
+    await WasmBoy.config({
+      ...WASMBOY_INITIALIZE_OPTIONS,
+      onPlay: () => {
+        onPlayIsPlaying = WasmBoy.isPlaying();
+      }
+    });
+    await WasmBoy.loadROM(getTestRomArray());
+
+    await WasmBoy.play();
+    await WasmBoy.pause();
+
+    assert.strictEqual(onPlayIsPlaying, true);
+  });
+
+  it('should be able to get a screenshot image data array', async () => {
+    await playWasmBoy();
+
+    const screenshot = await WasmBoy.screenshot();
+
+    assert(screenshot instanceof Uint8ClampedArray);
+    assert.strictEqual(screenshot.length, 160 * 144 * 4);
+    assert.strictEqual(screenshot[3], 255);
+  });
+
+  it('should tag save states with the WasmBoy version', async () => {
+    const saveState = await WasmBoy.saveState();
+
+    assert.strictEqual(saveState.wasmboyVersion, WasmBoy.getVersion());
+  });
+
+  it('should be able to load a JSON parsed save state', async () => {
+    await playWasmBoy();
+
+    const saveState = await WasmBoy.saveState();
+    const parsedSaveState = JSON.parse(JSON.stringify(saveState, (key, value) => (ArrayBuffer.isView(value) ? Array.from(value) : value)));
+
+    await playWasmBoy();
+
+    await WasmBoy.loadState(parsedSaveState);
+
+    const saveStateAfterLoad = await WasmBoy.saveState();
+    assert(new Uint8Array(saveStateAfterLoad.wasmboyMemory.wasmBoyInternalState).length > 0);
+    assert(new Uint8Array(saveStateAfterLoad.wasmboyMemory.wasmBoyPaletteMemory).length > 0);
+    assert(new Uint8Array(saveStateAfterLoad.wasmboyMemory.gameBoyMemory).length > 0);
+    assert(new Uint8Array(saveStateAfterLoad.wasmboyMemory.cartridgeRam).length > 0);
+  });
+
+  it('should call the set canvas callback after setting a canvas', async () => {
+    const canvasElement = createFakeCanvas();
+    let callbackCanvasElement = undefined;
+
+    await WasmBoy.config({
+      ...WASMBOY_INITIALIZE_OPTIONS,
+      setCanvasCallback: nextCanvasElement => {
+        callbackCanvasElement = nextCanvasElement;
+      }
+    });
+
+    await WasmBoy.setCanvas(canvasElement);
+
+    assert.strictEqual(callbackCanvasElement, canvasElement);
+    assert.strictEqual(WasmBoy.getCanvas(), canvasElement);
+  });
+
+  it('should let manual joypad state take over default polling', async () => {
+    const responsiveGamepad = WasmBoy.ResponsiveGamepad;
+    const backends = [responsiveGamepad.Keyboard, responsiveGamepad.Gamepad, responsiveGamepad.TouchInput];
+    const originals = backends.map(backend => ({
+      backend,
+      enable: backend.enable,
+      disable: backend.disable
+    }));
+
+    backends.forEach(backend => {
+      backend.enable = () => {};
+      backend.disable = () => {};
+    });
+
+    try {
+      WasmBoy.enableDefaultJoypad();
+      assert.strictEqual(responsiveGamepad.isEnabled(), true);
+
+      const setJoypadStatePromise = WasmBoy.setJoypadState({
+        ...WasmBoyJoypadState,
+        UP: true
+      });
+
+      assert.strictEqual(typeof setJoypadStatePromise.then, 'function');
+
+      await setJoypadStatePromise;
+      assert.strictEqual(responsiveGamepad.isEnabled(), false);
+    } finally {
+      if (responsiveGamepad.isEnabled()) {
+        WasmBoy.disableDefaultJoypad();
+      }
+
+      originals.forEach(original => {
+        original.backend.enable = original.enable;
+        original.backend.disable = original.disable;
+      });
+    }
+  });
+
+  it('should keep externally hosted worker and wasm asset URLs in config', async () => {
+    const workerUrls = {
+      lib: '/assets/wasmboy/worker/wasmboy.wasm.worker.js',
+      graphics: '/assets/wasmboy/worker/graphics.worker.js',
+      audio: '/assets/wasmboy/worker/audio.worker.js',
+      controller: '/assets/wasmboy/worker/controller.worker.js',
+      memory: '/assets/wasmboy/worker/memory.worker.js'
+    };
+    const wasmCoreUrl = '/assets/wasmboy/core/core.untouched.wasm';
+
+    await WasmBoy.config({
+      ...WASMBOY_INITIALIZE_OPTIONS,
+      workerUrls,
+      wasmCoreUrl
+    });
+
+    const config = WasmBoy.getConfig();
+    assert.deepStrictEqual(config.workerUrls, workerUrls);
+    assert.strictEqual(config.wasmCoreUrl, wasmCoreUrl);
   });
 });

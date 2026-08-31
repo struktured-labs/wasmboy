@@ -2,17 +2,18 @@
 }
 
 .disassembler__container {
-  min-width: 475px;
-  width: 475px;
-  max-width: 475px;
+  min-width: var(--disassembler__container-width);
+  width: var(--disassembler__container-width);
+  max-width: var(--disassembler__container-width);
 }
 
 /* Variables for our psuedo table */
 :root {
-  --disassembler-width: 450px;
+  --disassembler__container-width: 525px;
+  --disassembler-width: 500px;
   --disassembler-actions-width: 75px;
   --disassembler-hex-width: 75px;
-  --disassembler-mnemonic-width: 75px;
+  --disassembler-mnemonic-width: 125px;
 }
 
 .disassembler__header-list {
