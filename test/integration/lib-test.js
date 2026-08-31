@@ -39,6 +39,17 @@ const createFakeCanvas = () => {
   };
 };
 
+const WasmBoyJoypadState = {
+  UP: false,
+  RIGHT: false,
+  DOWN: false,
+  LEFT: false,
+  A: false,
+  B: false,
+  SELECT: false,
+  START: false
+};
+
 // Function for playing WasmBoy for a short amount of time
 const playWasmBoy = () => {
   let playResolve = undefined;
@@ -189,5 +200,44 @@ describe('WasmBoy Lib', () => {
 
     assert.strictEqual(callbackCanvasElement, canvasElement);
     assert.strictEqual(WasmBoy.getCanvas(), canvasElement);
+  });
+
+  it('should let manual joypad state take over default polling', async () => {
+    const responsiveGamepad = WasmBoy.ResponsiveGamepad;
+    const backends = [responsiveGamepad.Keyboard, responsiveGamepad.Gamepad, responsiveGamepad.TouchInput];
+    const originals = backends.map(backend => ({
+      backend,
+      enable: backend.enable,
+      disable: backend.disable
+    }));
+
+    backends.forEach(backend => {
+      backend.enable = () => {};
+      backend.disable = () => {};
+    });
+
+    try {
+      WasmBoy.enableDefaultJoypad();
+      assert.strictEqual(responsiveGamepad.isEnabled(), true);
+
+      const setJoypadStatePromise = WasmBoy.setJoypadState({
+        ...WasmBoyJoypadState,
+        UP: true
+      });
+
+      assert.strictEqual(typeof setJoypadStatePromise.then, 'function');
+
+      await setJoypadStatePromise;
+      assert.strictEqual(responsiveGamepad.isEnabled(), false);
+    } finally {
+      if (responsiveGamepad.isEnabled()) {
+        WasmBoy.disableDefaultJoypad();
+      }
+
+      originals.forEach(original => {
+        original.backend.enable = original.enable;
+        original.backend.disable = original.disable;
+      });
+    }
   });
 });
