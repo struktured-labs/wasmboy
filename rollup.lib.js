@@ -148,7 +148,7 @@ baseLibBundles.forEach(baseLibBundle => {
     ...plugins,
     url({
       limit: workerUrlLimit,
-      include: ['**/*.worker.js'],
+      include: ['**/*.worker.js', '**/*.worklet.js'],
       emitFiles: false,
       fileName: 'worker/[name][extname]'
     })
