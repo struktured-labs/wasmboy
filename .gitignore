@@ -33,3 +33,7 @@ build/
 node_modules
 /build
 /*.log
+
+# Ignore local scratch and environment files
+tmp/
+setenv.sh
