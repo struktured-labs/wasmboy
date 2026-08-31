@@ -60,6 +60,10 @@ const workerFiles = [
     output: 'dist/worker/audio.worker.js'
   },
   {
+    input: 'lib/audio/worklet/audio.worklet.js',
+    output: 'dist/worker/audio.worklet.js'
+  },
+  {
     input: 'lib/controller/worker/controller.worker.js',
     output: 'dist/worker/controller.worker.js'
   },
