@@ -19,6 +19,26 @@ const WASMBOY_INITIALIZE_OPTIONS = {
   isGbcEnabled: true
 };
 
+const createFakeCanvas = () => {
+  const context = {
+    createImageData: (width, height) => ({
+      data: new Uint8ClampedArray(width * height * 4)
+    }),
+    clearRect: () => {},
+    putImageData: () => {}
+  };
+
+  return {
+    width: 0,
+    height: 0,
+    style: '',
+    getContext: type => {
+      assert.strictEqual(type, '2d');
+      return context;
+    }
+  };
+};
+
 // Function for playing WasmBoy for a short amount of time
 const playWasmBoy = () => {
   let playResolve = undefined;
@@ -152,5 +172,22 @@ describe('WasmBoy Lib', () => {
     assert(new Uint8Array(saveStateAfterLoad.wasmboyMemory.wasmBoyPaletteMemory).length > 0);
     assert(new Uint8Array(saveStateAfterLoad.wasmboyMemory.gameBoyMemory).length > 0);
     assert(new Uint8Array(saveStateAfterLoad.wasmboyMemory.cartridgeRam).length > 0);
+  });
+
+  it('should call the set canvas callback after setting a canvas', async () => {
+    const canvasElement = createFakeCanvas();
+    let callbackCanvasElement = undefined;
+
+    await WasmBoy.config({
+      ...WASMBOY_INITIALIZE_OPTIONS,
+      setCanvasCallback: nextCanvasElement => {
+        callbackCanvasElement = nextCanvasElement;
+      }
+    });
+
+    await WasmBoy.setCanvas(canvasElement);
+
+    assert.strictEqual(callbackCanvasElement, canvasElement);
+    assert.strictEqual(WasmBoy.getCanvas(), canvasElement);
   });
 });
