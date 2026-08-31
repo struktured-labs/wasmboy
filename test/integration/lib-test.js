@@ -130,4 +130,10 @@ describe('WasmBoy Lib', () => {
     assert.strictEqual(screenshot.length, 160 * 144 * 4);
     assert.strictEqual(screenshot[3], 255);
   });
+
+  it('should tag save states with the WasmBoy version', async () => {
+    const saveState = await WasmBoy.saveState();
+
+    assert.strictEqual(saveState.wasmboyVersion, WasmBoy.getVersion());
+  });
 });
