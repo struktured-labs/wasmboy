@@ -25,6 +25,7 @@
   "module": "dist/wasmboy.wasm.esm.js",
   "browser": "dist/wasmboy.wasm.umd.js",
   "iife": "dist/wasmboy.wasm.iife.js",
+  "types": "lib/types/index.d.ts",
   "engines": {
     "node": ">=20",
     "npm": ">=10"
@@ -79,6 +80,7 @@
     "test:integration:headless": "node --experimental-worker node_modules/mocha/bin/_mocha test/integration/headless-simple.js --timeout 20000 --exit",
     "test:debugger": "npm run test:debugger:autoload",
     "test:debugger:autoload": "node node_modules/mocha/bin/_mocha test/debugger/auto-load-rom.js --exit",
+    "test:types": "tsc --project test/types/tsconfig.json",
     "test:core": "run-s build test:core:savestate test:core:oam",
     "test:core:nobuild": "run-s test:core:savestate test:core:oam",
     "test:core:savestate": "node --experimental-worker node_modules/mocha/bin/_mocha test/core/save-state.js --timeout 10000 --exit",
