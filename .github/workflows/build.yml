@@ -54,6 +54,12 @@ jobs:
       - name: Test debugger
         run: npm run test:debugger
 
+      - name: Test audio
+        run: npm run test:audio
+
+      - name: Test controller
+        run: npm run test:controller
+
       # Slowest suite last: it runs 25 test ROMs against golden frame output.
       - name: Test accuracy
         run: npm run test:accuracy:nobuild
