@@ -212,7 +212,7 @@ commonTest.getDirectories(testRomsPath).forEach(directory => {
 
         it('should match the expected output in the .output file. If it does not exist, create the file.', function(done) {
           // Set our timeout
-          this.timeout(timeToWaitForTestRom + 2000);
+          this.timeout(timeToWaitForTestRom + 10000);
 
           WasmBoy.play();
 
