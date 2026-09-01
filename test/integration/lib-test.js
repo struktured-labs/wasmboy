@@ -261,4 +261,41 @@ describe('WasmBoy Lib', () => {
     assert.deepStrictEqual(config.workerUrls, workerUrls);
     assert.strictEqual(config.wasmCoreUrl, wasmCoreUrl);
   });
+
+  it('should save loadable state when frames were driven without play', async () => {
+    // Headless callers advance frames directly and never start the play loop,
+    // which is the only thing that pushes memory back from the worker.
+    await WasmBoy.config(WASMBOY_INITIALIZE_OPTIONS);
+    await WasmBoy.loadROM(getTestRomArray());
+    await WasmBoy._runWasmExport('executeMultipleFrames', [60]);
+
+    const saveState = await WasmBoy.saveState();
+
+    Object.keys(saveState.wasmboyMemory).forEach(key => {
+      const memory = saveState.wasmboyMemory[key];
+      assert(memory !== undefined, `${key} was undefined`);
+      assert(memory.length > 0, `${key} was empty`);
+    });
+
+    // A state whose memory is missing still serializes and still looks like a
+    // save state, and only fails later on load, so load it here.
+    await WasmBoy.loadState(saveState);
+  });
+
+  it('should keep save state memory typed after loading a state', async () => {
+    await playWasmBoy();
+
+    const saveState = await WasmBoy.saveState();
+    await WasmBoy.loadState(saveState);
+
+    const afterLoad = await WasmBoy.saveState();
+    Object.keys(afterLoad.wasmboyMemory).forEach(key => {
+      assert(afterLoad.wasmboyMemory[key] instanceof Uint8Array, `${key} was not a Uint8Array`);
+    });
+
+    // The shape has to survive JSON, which is how states get persisted.
+    const parsed = JSON.parse(JSON.stringify(afterLoad, (key, value) => (ArrayBuffer.isView(value) ? Array.from(value) : value)));
+    assert(Array.isArray(parsed.wasmboyMemory.cartridgeRam), 'cartridgeRam did not survive JSON');
+    await WasmBoy.loadState(parsed);
+  });
 });
