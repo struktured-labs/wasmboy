@@ -282,6 +282,33 @@ describe('WasmBoy Lib', () => {
     await WasmBoy.loadState(saveState);
   });
 
+  it('should restore the same save state object more than once', async () => {
+    // Restoring a checkpoint repeatedly is the core of automated gameplay
+    // testing. The buffers go to the worker as transferables, so a load must
+    // not consume the caller's state.
+    await playWasmBoy();
+    await WasmBoy._runWasmExport('executeMultipleFrames', [60]);
+
+    const checkpoint = await WasmBoy.saveState();
+    const lengthsBefore = Object.keys(checkpoint.wasmboyMemory).map(key => checkpoint.wasmboyMemory[key].length);
+
+    await WasmBoy.loadState(checkpoint);
+
+    const lengthsAfter = Object.keys(checkpoint.wasmboyMemory).map(key => checkpoint.wasmboyMemory[key].length);
+    assert.deepStrictEqual(lengthsAfter, lengthsBefore, 'loading detached the caller save state');
+
+    // The second load has to actually restore, not silently apply nothing.
+    await WasmBoy._runWasmExport('executeMultipleFrames', [60]);
+    await WasmBoy.loadState(checkpoint);
+
+    const afterSecondLoad = await WasmBoy.saveState();
+    assert.deepStrictEqual(
+      Array.from(afterSecondLoad.wasmboyMemory.gameBoyMemory),
+      Array.from(checkpoint.wasmboyMemory.gameBoyMemory),
+      'second restore did not reproduce the checkpoint'
+    );
+  });
+
   it('should keep save state memory typed after loading a state', async () => {
     await playWasmBoy();
 
