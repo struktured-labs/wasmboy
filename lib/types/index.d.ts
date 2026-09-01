@@ -384,16 +384,18 @@ export interface WasmBoyConfig {
   setCanvasCallback?: ((canvasElement: HTMLCanvasElement) => void) | null;
   /**
    * Send audio straight from the emulator worker to the AudioWorklet instead of
-   * relaying it through the main thread. Avoids main-thread scheduling jitter,
-   * at the cost of not being able to run the audio debugger. Ignored when
-   * `enableAudioDebugging` is set. Default false.
+   * relaying it through the main thread. This is the recommended browser path
+   * and the default: relaying leaves delivery at the mercy of main-thread
+   * scheduling, and no amount of rate control can absorb that jitter, only
+   * buffer depth can. Ignored when `enableAudioDebugging` is set, since the
+   * debugger needs the audio on the main thread. Default true.
    */
   audioWorkletDirectOutput?: boolean;
   /**
-   * Output latency to hold, in seconds. The worklet trims playback rate to keep
-   * its queue at this depth, so this is the latency you actually get rather
-   * than a ceiling. Default 0.028. Lower values leave less room to absorb a
-   * late block, so underruns become more likely.
+   * Output latency to hold, in seconds. The emulator is paced off the audio
+   * queue to keep it at this depth, so this is the latency you get rather than
+   * a ceiling. Default 0.026. The relayed path adds headroom on top of this to
+   * absorb main-thread jitter, so it runs at higher latency by design.
    */
   audioTargetLatencyInSeconds?: number;
   /**
@@ -406,6 +408,31 @@ export interface WasmBoyConfig {
    * fetching the default `data:` core.
    */
   wasmCoreUrl?: string | null;
+}
+
+/**
+ * A snapshot of the audio output path, from `getAudioDiagnostics()`.
+ */
+export interface WasmBoyAudioDiagnostics {
+  /** Whether the AudioWorklet loaded; false means scheduled buffers */
+  workletActive: boolean;
+  /** Whether direct output was asked for in config */
+  directOutputRequested: boolean;
+  /** Whether direct output is actually in use */
+  directOutputActive: boolean;
+  /** Latency being held, including the relayed path's extra headroom */
+  effectiveTargetLatencySeconds?: number;
+  /** Last status the worklet reported, undefined before it starts */
+  worklet?: {
+    queuedFrames: number;
+    latencySeconds: number;
+    droppedFrames: number;
+    underrunFrames: number;
+    targetFrames: number;
+    targetLatencySeconds: number;
+    driftTrim: number;
+    playbackRate: number;
+  };
 }
 
 /**
@@ -658,6 +685,13 @@ export interface WasmBoyInstance {
    * require a canvas.
    */
   screenshot(): Promise<Uint8ClampedArray>;
+
+  /**
+   * What the audio path is actually doing, for latency measurement. Reports
+   * which path is live rather than which was requested: the worklet can fail
+   * to load, and direct output is refused while the audio debugger is on.
+   */
+  getAudioDiagnostics(): WasmBoyAudioDiagnostics;
 
   // -------------------------------------------------------------------------
   // Audio
