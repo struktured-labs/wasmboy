@@ -383,6 +383,20 @@ export interface WasmBoyConfig {
   /** Called after a canvas is attached, with the canvas that was set */
   setCanvasCallback?: ((canvasElement: HTMLCanvasElement) => void) | null;
   /**
+   * Send audio straight from the emulator worker to the AudioWorklet instead of
+   * relaying it through the main thread. Avoids main-thread scheduling jitter,
+   * at the cost of not being able to run the audio debugger. Ignored when
+   * `enableAudioDebugging` is set. Default false.
+   */
+  audioWorkletDirectOutput?: boolean;
+  /**
+   * Output latency to hold, in seconds. The worklet trims playback rate to keep
+   * its queue at this depth, so this is the latency you actually get rather
+   * than a ceiling. Default 0.028. Lower values leave less room to absorb a
+   * late block, so underruns become more likely.
+   */
+  audioTargetLatencyInSeconds?: number;
+  /**
    * URLs for externally hosted workers. Set these when your Content Security
    * Policy does not allow the default inlined `blob:` workers.
    */
