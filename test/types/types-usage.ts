@@ -30,6 +30,8 @@ const cspConfig: WasmBoyConfig = {
     memory: '/assets/wasmboy/worker/memory.worker.js'
   },
   wasmCoreUrl: '/assets/wasmboy/core/core.untouched.wasm',
+  audioWorkletDirectOutput: true,
+  audioTargetLatencyInSeconds: 0.028,
   setCanvasCallback: canvasElement => {
     const width: number = canvasElement.width;
     return width;
