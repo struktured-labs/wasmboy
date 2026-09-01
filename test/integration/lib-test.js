@@ -80,9 +80,38 @@ describe('WasmBoy Lib', () => {
 
     // Save State should be the same
     const saveStateInternalState = new Uint8Array(saveState.wasmboyMemory.wasmBoyInternalState);
-    const saveStateTwoInternalState = new Uint8Array(saveState.wasmboyMemory.wasmBoyInternalState);
+    const saveStateTwoInternalState = new Uint8Array(saveStateTwo.wasmboyMemory.wasmBoyInternalState);
+    assert(saveStateInternalState.length > 0, 'the first save state was emptied by loading it');
+    assert.strictEqual(saveStateTwoInternalState.length, saveStateInternalState.length);
     for (let i = 0; i < saveStateInternalState.length; i++) {
-      assert(saveStateInternalState[i] === saveStateTwoInternalState[i], true);
+      assert.strictEqual(saveStateInternalState[i], saveStateTwoInternalState[i]);
     }
+  });
+
+  it('should be able to load the same save state twice', async () => {
+    // Restoring one checkpoint repeatedly is the basis of automated gameplay
+    // testing. The memory goes to the worker as transferables, so a load must
+    // not consume the caller's copy.
+    await playWasmBoy();
+    await WasmBoy._runWasmExport('executeMultipleFrames', [60]);
+
+    const checkpoint = await WasmBoy.saveState();
+    const lengthsBefore = Object.keys(checkpoint.wasmboyMemory).map(key => checkpoint.wasmboyMemory[key].length);
+
+    await WasmBoy.loadState(checkpoint);
+
+    const lengthsAfter = Object.keys(checkpoint.wasmboyMemory).map(key => checkpoint.wasmboyMemory[key].length);
+    assert.deepStrictEqual(lengthsAfter, lengthsBefore, 'loading detached the caller save state');
+
+    // The second load has to actually restore, not silently apply nothing.
+    await WasmBoy._runWasmExport('executeMultipleFrames', [60]);
+    await WasmBoy.loadState(checkpoint);
+
+    const afterSecondLoad = await WasmBoy.saveState();
+    assert.deepStrictEqual(
+      Array.from(afterSecondLoad.wasmboyMemory.gameBoyMemory),
+      Array.from(checkpoint.wasmboyMemory.gameBoyMemory),
+      'second restore did not reproduce the checkpoint'
+    );
   });
 });
