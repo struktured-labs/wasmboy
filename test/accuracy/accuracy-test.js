@@ -69,7 +69,7 @@ describe('audio golden test', () => {
       await WasmBoy.loadROM(testRomArray);
       done();
     };
-    asyncTask();
+    asyncTask().catch(done);
   });
 
   it('should have the same audio buffer', function(done) {
@@ -99,7 +99,7 @@ describe('audio golden test', () => {
       goldenFileCompareOrCreate('./test/accuracy/sound-test.golden.output.json', audioArray);
       done();
     };
-    asyncTask();
+    asyncTask().catch(done);
   });
 });
 
@@ -120,7 +120,7 @@ describe('performance options golden test', () => {
       await WasmBoy.loadROM(testRomArray);
       done();
     };
-    asyncTask();
+    asyncTask().catch(done);
   });
 
   it('should have the same graphics / audio buffer', function(done) {
@@ -165,7 +165,7 @@ describe('performance options golden test', () => {
 
       done();
     };
-    asyncTask();
+    asyncTask().catch(done);
   });
 });
 
