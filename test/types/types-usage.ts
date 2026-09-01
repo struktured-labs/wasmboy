@@ -31,7 +31,7 @@ const cspConfig: WasmBoyConfig = {
   },
   wasmCoreUrl: '/assets/wasmboy/core/core.untouched.wasm',
   audioWorkletDirectOutput: true,
-  audioTargetLatencyInSeconds: 0.028,
+  audioTargetLatencyInSeconds: 0.026,
   setCanvasCallback: canvasElement => {
     const width: number = canvasElement.width;
     return width;
@@ -49,6 +49,14 @@ const headlessRun = async (): Promise<void> => {
   await WasmBoy.setJoypadState({ ...neutralJoypad, START: true });
   await WasmBoy._runWasmExport('executeMultipleFrames', [1]);
   await WasmBoy.setJoypadState(neutralJoypad);
+
+  // The audio path reports which route is actually live.
+  const audio = WasmBoy.getAudioDiagnostics();
+  const directActive: boolean = audio.directOutputActive;
+  const queued: number | undefined = audio.worklet && audio.worklet.queuedFrames;
+  if (!directActive && queued === -1) {
+    throw new Error('unreachable; keeps the bindings used');
+  }
 
   // Frame capture works without a canvas.
   const frame: Uint8ClampedArray = await WasmBoy.screenshot();
