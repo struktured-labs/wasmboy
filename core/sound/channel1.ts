@@ -319,11 +319,7 @@ export class Channel1 {
   static resetTimer(): void {
     let frequencyTimer = (2048 - Channel1.frequency) << 2;
 
-    // TODO: Ensure this is correct for GBC Double Speed Mode
-    if (Cpu.GBCDoubleSpeed) {
-      frequencyTimer = frequencyTimer << 2;
-    }
-    Channel1.frequencyTimer = frequencyTimer;
+    Channel1.frequencyTimer = frequencyTimer << (<i32>Cpu.GBCDoubleSpeed);
   }
 
   static getSample(numberOfCycles: i32): i32 {
