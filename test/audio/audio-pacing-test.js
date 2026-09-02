@@ -61,9 +61,13 @@ const loadPacing = () => {
   const sandbox = { Math };
   vm.createContext(sandbox);
   const source = fs.readFileSync(PACING_SOURCE, 'utf8').replace(/^export /gm, '');
-  vm.runInContext(`${source}\nthis.computeProducerDelayMs = computeProducerDelayMs;\nthis.getEffectiveTargetLatencySeconds = getEffectiveTargetLatencySeconds;`, sandbox, {
-    filename: PACING_SOURCE
-  });
+  const raw = fs.readFileSync(PACING_SOURCE, 'utf8');
+  const names = [
+    ...[...raw.matchAll(/^export function (\w+)/gm)].map(match => match[1]),
+    ...[...raw.matchAll(/^export const (\w+)/gm)].map(match => match[1])
+  ];
+  const exposure = names.map(name => `this.${name} = ${name};`).join('\n');
+  vm.runInContext(`${source}\n${exposure}`, sandbox, { filename: PACING_SOURCE });
   return sandbox;
 };
 
@@ -348,5 +352,270 @@ describe('Audio pacing against a stale-high reading', () => {
     });
 
     assert(Math.abs(projected - 0.028) < 1e-9, `expected the anchor to hold, got ${projected}`);
+  });
+});
+
+describe('Audio admission control', () => {
+  const pacing = loadPacing();
+
+  it('should allow more than one block outstanding', () => {
+    // One block per acknowledgement round trip could not move 44100 frames a
+    // second and the output starved.
+    assert(pacing.MAX_AUDIO_BLOCKS_IN_FLIGHT > 1, 'one block in flight cannot sustain real time');
+    assert.strictEqual(pacing.evaluateAdmission({ ackActive: true, blocksInFlight: 1 }).admit, true);
+  });
+
+  it('should stop at the window', () => {
+    const admission = pacing.evaluateAdmission({ ackActive: true, blocksInFlight: pacing.MAX_AUDIO_BLOCKS_IN_FLIGHT });
+    assert.strictEqual(admission.admit, false, 'the window is the flow control');
+  });
+
+  it('should not refuse on latency alone', () => {
+    // A hard latency ceiling here stalled the producer before emulation ran,
+    // and those stalls dragged the frame rate down and starved the output.
+    // Latency is held by pacing the interval instead.
+    const admission = pacing.evaluateAdmission({
+      ackActive: true,
+      blocksInFlight: 0,
+      acceptedSeconds: 5,
+      unackedSeconds: 5,
+      pendingSeconds: 5
+    });
+    assert.strictEqual(admission.admit, true, 'admission must not stop the producer over a queue depth');
+  });
+
+  it('should not gate the relayed path, which has nothing to acknowledge', () => {
+    const admission = pacing.evaluateAdmission({ ackActive: false, blocksInFlight: 99 });
+    assert.strictEqual(admission.admit, true, 'without acknowledgements the producer must not stall');
+    assert.strictEqual(admission.timedOut, false);
+  });
+
+  it('should treat the watchdog as a fault, well beyond normal jitter', () => {
+    assert(pacing.AUDIO_ACK_WATCHDOG_MS >= 50, 'a watchdog near one block would fire on jitter');
+
+    const jitter = pacing.evaluateAdmission({ ackActive: true, blocksInFlight: 1, oldestWaitedMs: 30 });
+    assert.strictEqual(jitter.timedOut, false, 'a late acknowledgement is still worth waiting for');
+
+    const broken = pacing.evaluateAdmission({ ackActive: true, blocksInFlight: 1, oldestWaitedMs: pacing.AUDIO_ACK_WATCHDOG_MS + 1 });
+    assert.strictEqual(broken.timedOut, true, 'a genuinely broken path has to be reported');
+    assert.strictEqual(broken.admit, false);
+  });
+
+  it('should sustain real time through the window', () => {
+    // Acknowledgement round trips measured near 15ms.
+    const roundTripSeconds = 0.015;
+    const framesPerSecond = (pacing.MAX_AUDIO_BLOCKS_IN_FLIGHT * pacing.MAX_ACCEPTED_BLOCK_FRAMES) / roundTripSeconds;
+    assert(framesPerSecond > 44100, `window sustains only ${Math.round(framesPerSecond)} frames/s`);
+  });
+
+  it('should split the core handoff evenly', () => {
+    // The core hands over about 1024 frames. 768 split that into 768 and 256
+    // and did not raise the acknowledgement rate at all.
+    assert.strictEqual(1024 % pacing.MAX_ACCEPTED_BLOCK_FRAMES, 0, 'chunks should divide the native handoff evenly');
+  });
+});
+
+describe('AudioWorklet block acknowledgement', () => {
+  const RENDER_QUANTUM_FRAMES = 128;
+
+  const createProcessorWithInputPort = () => {
+    const Processor = loadWorklet(48000);
+    const processor = new Processor({
+      processorOptions: { sourceSampleRate: SOURCE_SAMPLE_RATE, capacityFrames: 4096, targetLatencySeconds: 0.026 }
+    });
+
+    const sent = [];
+    processor.inputPort = { postMessage: message => sent.push(message) };
+    return { processor, sent };
+  };
+
+  const writeUnsignedBlock = (processor, frames, sequence) => {
+    // Interleaved unsigned stereo, the shape the emulator worker sends.
+    const buffer = new Uint8Array(frames * 2).fill(128);
+    processor._writeUnsigned({
+      buffer: buffer.buffer,
+      numberOfSamples: frames,
+      fps: 60,
+      sequence
+    });
+  };
+
+  it('should acknowledge a block only after taking it into the ring', () => {
+    const { processor, sent } = createProcessorWithInputPort();
+
+    writeUnsignedBlock(processor, 512, 7);
+
+    const acks = sent.filter(message => message.type === 'ack');
+    assert.strictEqual(acks.length, 1, 'expected exactly one acknowledgement');
+    assert.strictEqual(acks[0].sequence, 7, 'the acknowledgement must identify the block');
+    // The point of acknowledging on acceptance: the reported queue includes it.
+    assert.strictEqual(acks[0].queuedFrames, 512, `expected the block to be counted, got ${acks[0].queuedFrames}`);
+    assert(Math.abs(acks[0].queuedSeconds - 512 / SOURCE_SAMPLE_RATE) < 1e-9);
+  });
+
+  it('should report the queue shrinking as it is consumed', () => {
+    const { processor, sent } = createProcessorWithInputPort();
+    const outputs = [[new Float32Array(RENDER_QUANTUM_FRAMES), new Float32Array(RENDER_QUANTUM_FRAMES)]];
+
+    writeUnsignedBlock(processor, 2048, 1);
+    for (let quantum = 0; quantum < 8; quantum++) processor.process([], outputs);
+    writeUnsignedBlock(processor, 512, 2);
+
+    const acks = sent.filter(message => message.type === 'ack');
+    assert.strictEqual(acks.length, 2);
+    assert(
+      acks[1].queuedFrames < acks[0].queuedFrames + 512,
+      `the second acknowledgement should reflect what was consumed: ${acks[0].queuedFrames} then ${acks[1].queuedFrames}`
+    );
+  });
+
+  it('should not acknowledge an untagged block', () => {
+    // The relayed path does not tag its writes and must not be gated.
+    const { processor, sent } = createProcessorWithInputPort();
+
+    writeUnsignedBlock(processor, 512, undefined);
+
+    assert.strictEqual(sent.filter(message => message.type === 'ack').length, 0);
+  });
+});
+
+describe('Audio handoff chunking', () => {
+  const pacing = loadPacing();
+  const MAX = 512;
+
+  it('should bound a single handoff', () => {
+    const chunk = pacing.planAudioChunk({ totalSamples: 1400, sentOffset: 0, maxBlockFrames: MAX });
+    assert.strictEqual(chunk.count, MAX, 'a large buffer must be handed over in bounded pieces');
+    assert.strictEqual(chunk.isFinal, false, 'and must not be treated as fully drained');
+  });
+
+  it('should walk through the buffer without resending or dropping', () => {
+    // The bug this guards: slicing from the start every time resends the first
+    // chunk forever and never delivers the rest.
+    const total = 1400;
+    let offset = 0;
+    const delivered = [];
+
+    for (let pass = 0; pass < 10; pass++) {
+      const chunk = pacing.planAudioChunk({ totalSamples: total, sentOffset: offset, maxBlockFrames: MAX });
+      if (chunk.isDrained) break;
+      delivered.push([chunk.offset, chunk.offset + chunk.count]);
+      offset = chunk.isFinal ? 0 : chunk.offset + chunk.count;
+      if (chunk.isFinal) break;
+    }
+
+    assert.deepStrictEqual(delivered, [[0, 512], [512, 1024], [1024, 1400]], 'every sample exactly once, in order');
+    assert.strictEqual(delivered[delivered.length - 1][1], total, 'the whole buffer must be delivered');
+  });
+
+  it('should mark a buffer that fits as final immediately', () => {
+    const chunk = pacing.planAudioChunk({ totalSamples: 400, sentOffset: 0, maxBlockFrames: MAX });
+    assert.strictEqual(chunk.count, 400);
+    assert.strictEqual(chunk.isFinal, true, 'so the core buffer is cleared rather than left holding audio');
+  });
+
+  it('should report an exhausted buffer as drained rather than sending nothing', () => {
+    const chunk = pacing.planAudioChunk({ totalSamples: 512, sentOffset: 512, maxBlockFrames: MAX });
+    assert.strictEqual(chunk.count, 0);
+    assert.strictEqual(chunk.isDrained, true);
+  });
+
+  it('should hold a target inside the latency budget with room to run', () => {
+    // Target plus a whole block was the obvious bound and the browser falsified
+    // it: the queue drains while blocks are in flight, so peaks sit a few
+    // milliseconds over target rather than a block over. Targeting for the
+    // pessimistic bound starved the output instead. These are the limits two
+    // 30s browser gates actually ran clean at.
+    assert(pacing.DEFAULT_TARGET_LATENCY_SECONDS <= 0.031, 'the target itself has to be inside the budget');
+    assert(pacing.DEFAULT_TARGET_LATENCY_SECONDS >= 0.022, 'below this the output starved before reaching the budget');
+  });
+});
+
+describe('Audio admission recovery', () => {
+  const pacing = loadPacing();
+  const BLOCK = 512 / 44100;
+
+  it('should decay a held reading so pacing does not brake forever', () => {
+    // The accepted queue drains in real time. Pacing on a reading that never
+    // decays keeps braking against audio the hardware has already played.
+    const accepted = 0.026;
+    assert(pacing.computeProducerDelayMs(accepted, 0.019) > 0, 'a queue over target should brake');
+    assert.strictEqual(pacing.computeProducerDelayMs(pacing.decayAcceptedSeconds(accepted, 0.02), 0.019), 0);
+  });
+
+  it('should decay the accepted queue to empty rather than negative', () => {
+    assert.strictEqual(pacing.decayAcceptedSeconds(0.02, 5), 0);
+    assert.strictEqual(pacing.decayAcceptedSeconds(undefined, 1), undefined);
+    assert(Math.abs(pacing.decayAcceptedSeconds(0.03, 0.01) - 0.02) < 1e-9);
+  });
+});
+
+describe('AudioWorklet rate under flow control', () => {
+  const writeBlock = (processor, sequence, fps) =>
+    processor._writeUnsigned({
+      buffer: new Uint8Array(512 * 2).fill(128).buffer,
+      numberOfSamples: 512,
+      fps,
+      allowFastSpeedStretching: false,
+      sequence
+    });
+
+  it('should not detune when flow control throttles the emulator', () => {
+    // Pacing deliberately slows the emulator, so its frame rate dips by design.
+    // Reading those dips as slowness stretched playback and collapsed the rate
+    // to 0.64 in a browser run, which is audible as pitch.
+    const Processor = loadWorklet(48000);
+    const processor = new Processor({
+      processorOptions: { sourceSampleRate: SOURCE_SAMPLE_RATE, capacityFrames: 4096, targetLatencySeconds: 0.013 }
+    });
+    processor.inputPort = { postMessage: () => {} };
+
+    for (let block = 0; block < 20; block++) writeBlock(processor, block + 1, 38);
+
+    assert.strictEqual(processor.baseRate, 1, `flow-controlled audio should play at rate 1, got ${processor.baseRate}`);
+    assert(processor.playbackRate > 0.99, `playback rate collapsed to ${processor.playbackRate}`);
+  });
+
+  it('should still stretch on the relayed path, which is not throttled', () => {
+    // There a low frame rate really does mean the emulator is behind.
+    const Processor = loadWorklet(48000);
+    const processor = new Processor({
+      processorOptions: { sourceSampleRate: SOURCE_SAMPLE_RATE, capacityFrames: 4096, targetLatencySeconds: 0.013 }
+    });
+
+    for (let block = 0; block < 20; block++) writeBlock(processor, undefined, 38);
+
+    assert(processor.baseRate < 1, `expected stretching without flow control, got ${processor.baseRate}`);
+  });
+});
+
+describe('Audio pacing signal choice', () => {
+  const pacing = loadPacing();
+  const BLOCK = 512 / 44100;
+
+  it('should not count in-flight audio twice', () => {
+    // The status projection already counts everything handed over since the
+    // reading, acknowledged or not. Adding unacknowledged audio on top of it
+    // double counts and brakes against audio the hardware has already played:
+    // measured as pacing 6ms against a projection of 29.66ms while the real
+    // queue was 7.07ms.
+    const readingSeconds = 0.01474;
+    const sentSinceReading = 2 * BLOCK;
+    const elapsedSeconds = 0.018;
+
+    const projected = pacing.projectQueuedSeconds({
+      queuedSecondsAtReading: readingSeconds,
+      secondsSentSinceReading: sentSinceReading,
+      pendingSeconds: 0,
+      elapsedSeconds
+    });
+    const doubleCounted = projected + sentSinceReading;
+
+    const honestDelay = pacing.computeProducerDelayMs(projected, pacing.DEFAULT_TARGET_LATENCY_SECONDS);
+    const inflatedDelay = pacing.computeProducerDelayMs(doubleCounted, pacing.DEFAULT_TARGET_LATENCY_SECONDS);
+
+    assert(projected < doubleCounted, 'adding in-flight audio again inflates the estimate');
+    assert(honestDelay <= 2, `a queue near target should barely brake, got ${honestDelay}ms`);
+    assert(inflatedDelay >= honestDelay * 5, `the double count is what produced the phantom braking: ${honestDelay}ms vs ${inflatedDelay}ms`);
   });
 });
