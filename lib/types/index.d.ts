@@ -440,6 +440,18 @@ export interface WasmBoyAudioDiagnostics {
     readingAgeMs?: number;
     /** Sequence of the worklet status the reading came from */
     readingSequence?: number;
+    /** Queue depth the worklet reported when it accepted the last block */
+    acceptedQueuedSeconds?: number;
+    /** True once blocks are acknowledged; false means the producer is estimating */
+    ackActive: boolean;
+    /** Blocks abandoned by the watchdog. Non-zero means a broken feedback path */
+    ackTimeouts: number;
+    /** Blocks handed over but not yet acknowledged */
+    blocksInFlight?: number;
+    /** Audio handed over but not yet acknowledged */
+    unackedSeconds?: number;
+    /** Sequence of the last acknowledged block */
+    lastAckSequence?: number;
   };
   /** Last status the worklet reported, undefined before it starts */
   worklet?: {
