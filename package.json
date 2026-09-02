@@ -11,7 +11,7 @@
     "gameboy-color"
   ],
   "author": "Aaron Turner",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "license": "GPL-3.0-or-later",
   "homepage": "https://wasmboy.app",
   "repository": {
@@ -73,7 +73,7 @@
     "test:accuracy:nobuild": "node --experimental-worker node_modules/mocha/bin/_mocha test/accuracy/accuracy-test.js --exit",
     "test:controller": "node --experimental-worker node_modules/mocha/bin/_mocha test/controller/virtual-controller-test.js --exit",
     "test:perf": "npm run test:performance",
-    "test:audio": "node --experimental-worker node_modules/mocha/bin/_mocha test/audio/audio-worklet-test.js test/audio/audio-worklet-drift-test.js test/audio/audio-pacing-test.js --exit",
+    "test:audio": "node --experimental-worker node_modules/mocha/bin/_mocha test/audio/audio-worklet-test.js test/audio/audio-worklet-drift-test.js test/audio/audio-pacing-test.js test/audio/audio-diagnostics-test.js --exit",
     "test:performance": "run-s build test:performance:nobuild",
     "test:performance:nobuild": "node --experimental-worker node_modules/mocha/bin/_mocha test/performance/performance-test.js --exit",
     "test:integration": "run-s build test:integration:lib test:integration:headless",

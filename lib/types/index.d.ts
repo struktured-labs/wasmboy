@@ -420,8 +420,21 @@ export interface WasmBoyAudioDiagnostics {
   directOutputRequested: boolean;
   /** Whether direct output is actually in use */
   directOutputActive: boolean;
+  /** Set when the audio debugger is on, which is what refuses direct output */
+  audioDebuggingEnabled: boolean;
+  /** The target asked for in config */
+  requestedTargetLatencySeconds?: number;
   /** Latency being held, including the relayed path's extra headroom */
   effectiveTargetLatencySeconds?: number;
+  /**
+   * What the emulator worker last saw and did. `latencySeconds` undefined means
+   * no queue reading has reached the producer, so nothing is applying
+   * backpressure — a different problem from backpressure being too weak.
+   */
+  producer: {
+    latencySeconds?: number;
+    pacingDelayMs?: number;
+  };
   /** Last status the worklet reported, undefined before it starts */
   worklet?: {
     queuedFrames: number;
