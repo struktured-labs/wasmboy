@@ -85,4 +85,20 @@ describe('WasmBoy Lib', () => {
       assert(saveStateInternalState[i] === saveStateTwoInternalState[i], true);
     }
   });
+
+  it('should save loadable state when frames were driven without play', async () => {
+    // Headless callers advance frames directly and never start the play loop,
+    // which is the only thing that pushes memory back from the worker.
+    await WasmBoy.reset(WASMBOY_INITIALIZE_OPTIONS);
+    await WasmBoy.loadROM(getTestRomArray());
+    await WasmBoy._runWasmExport('executeMultipleFrames', [60]);
+
+    const saveState = await WasmBoy.saveState();
+
+    Object.keys(saveState.wasmboyMemory).forEach(key => {
+      const memory = saveState.wasmboyMemory[key];
+      assert(memory !== undefined, `${key} was undefined`);
+      assert(memory.length > 0, `${key} was empty`);
+    });
+  });
 });
