@@ -311,6 +311,13 @@ export interface WasmBoyPlugin {
 export interface WasmBoyConfig {
   /** Run in headless mode without rendering (default: false) */
   headless?: boolean;
+  /**
+   * Fill video and work RAM with random bytes at startup, the way hardware
+   * powers on. Off by default: games that assume RAM starts clear render
+   * garbage with it on, and it makes every run differ from the last, which
+   * golden-frame comparison and reproducible captures rely on.
+   */
+  randomizeStartupRam?: boolean;
   /** Disable automatic pause when browser tab is hidden (default: false) */
   disablePauseOnHidden?: boolean;
   /** Enable audio output (default: true) */
