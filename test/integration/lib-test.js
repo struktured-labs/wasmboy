@@ -93,15 +93,31 @@ describe('WasmBoy Lib', () => {
       });
   });
 
-  it('should initialize work ram with random garbage bytes', async () => {
-    const workRamLocation = await WasmBoy._getWasmConstant('WORK_RAM_LOCATION');
-    const workRamSize = await WasmBoy._getWasmConstant('WORK_RAM_SIZE');
-    const workRam = await WasmBoy._getWasmMemorySection(workRamLocation, workRamLocation + workRamSize);
+  // Run in a child process: the suite shares one WasmBoy, and memory is only
+  // cleared on the first load, so a second case in this process would measure
+  // whatever the first left behind.
+  const countNonZeroWorkRam = randomizeStartupRam => {
+    const helper = require('path').resolve(__dirname, 'helpers/count-work-ram.js');
+    const output = require('child_process').execSync(`node --experimental-worker ${helper} ${randomizeStartupRam}`, { encoding: 'utf8' });
+    return JSON.parse(output.trim().split('\n').pop());
+  };
 
-    assert(
-      workRam.some(value => value !== 0),
-      true
-    );
+  it('should start with cleared RAM by default', function() {
+    // Seeding RAM with garbage is what hardware does, but a game that assumes
+    // it starts clear renders garbage, and every run differs from the last,
+    // which golden frames and reproducible captures depend on. This shipped
+    // once and corrupted a real game's title screen.
+    this.timeout(60000);
+
+    const cleared = countNonZeroWorkRam(false);
+    assert.strictEqual(cleared.nonZero, 0, `${cleared.nonZero} of ${cleared.total} work RAM bytes were seeded by default`);
+  });
+
+  it('should seed RAM when asked to', function() {
+    this.timeout(60000);
+
+    const seeded = countNonZeroWorkRam(true);
+    assert(seeded.nonZero > seeded.total / 4, `expected seeded RAM, only ${seeded.nonZero} of ${seeded.total} bytes were set`);
   });
 
   it('should be able to save/load state', async () => {
