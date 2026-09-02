@@ -66,7 +66,8 @@ export class Channel3 {
   // -VV- ---- Volume code (00=0%, 01=100%, 10=50%, 11=25%)
   static NRx2VolumeCode: i32 = 0;
   static updateNRx2(value: i32): void {
-    Channel3.NRx2VolumeCode = (value >> 5) & 0x0f;
+    // NR32 only defines bits 6-5.
+    Channel3.NRx2VolumeCode = (value >> 5) & 0x03;
   }
 
   // NR33 -> Frequency lower data (W)
@@ -295,7 +296,8 @@ export class Channel3 {
     if (Channel3.volumeCodeChanged) {
       volumeCode = eightBitLoadFromGBMemory(Channel3.memoryLocationNRx2);
       volumeCode = volumeCode >> 5;
-      volumeCode = volumeCode & 0x0f;
+      // NR32 only defines bits 6-5.
+      volumeCode = volumeCode & 0x03;
       Channel3.volumeCode = volumeCode;
       Channel3.volumeCodeChanged = false;
     }
@@ -303,30 +305,22 @@ export class Channel3 {
     // Get the current sample
     let sample = getSampleFromSampleBufferForWaveTablePosition();
 
-    // Shift our sample and set our volume depending on the volume code
-    // Since we can't multiply by float, simply divide by 4, 2, 1
+    // Attenuate once. Shifting and then dividing by the same amount again put
+    // code 2 at a quarter and code 3 at a sixteenth.
     // http://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware#Wave_Channel
-    let outputVolume = 0;
     switch (volumeCode) {
       case 0:
-        sample >>= 4;
+        sample = 0;
         break;
       case 1:
-        // Dont Shift sample
-        outputVolume = 1;
         break;
       case 2:
         sample >>= 1;
-        outputVolume = 2;
         break;
       default:
         sample >>= 2;
-        outputVolume = 4;
         break;
     }
-
-    // Apply out output volume
-    sample = outputVolume > 0 ? sample / outputVolume : 0;
     // Square Waves Can range from -15 - 15. Therefore simply add 15
     sample += 15;
 
