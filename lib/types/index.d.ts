@@ -434,6 +434,12 @@ export interface WasmBoyAudioDiagnostics {
   producer: {
     latencySeconds?: number;
     pacingDelayMs?: number;
+    /** What pacing actually acted on: the reading plus what has happened since */
+    projectedLatencySeconds?: number;
+    /** How old the anchoring reading was when pacing ran */
+    readingAgeMs?: number;
+    /** Sequence of the worklet status the reading came from */
+    readingSequence?: number;
   };
   /** Last status the worklet reported, undefined before it starts */
   worklet?: {
