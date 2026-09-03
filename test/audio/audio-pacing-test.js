@@ -526,14 +526,14 @@ describe('Audio handoff chunking', () => {
     assert.strictEqual(chunk.isDrained, true);
   });
 
-  it('should hold a target inside the latency budget with room to run', () => {
-    // Target plus a whole block was the obvious bound and the browser falsified
-    // it: the queue drains while blocks are in flight, so peaks sit a few
-    // milliseconds over target rather than a block over. Targeting for the
-    // pessimistic bound starved the output instead. These are the limits two
-    // 30s browser gates actually ran clean at.
-    assert(pacing.DEFAULT_TARGET_LATENCY_SECONDS <= 0.031, 'the target itself has to be inside the budget');
-    assert(pacing.DEFAULT_TARGET_LATENCY_SECONDS >= 0.022, 'below this the output starved before reaching the budget');
+  it('should hold a target with enough floor for exact-pitch playback', () => {
+    // The 31ms budget was a proxy for "no worse than the old player" and the
+    // owner traded it away for exact pitch: with the rate pinned to 1, queue
+    // level is the only shock absorber, and 24ms starved in real Firefox (263
+    // underrun frames at a ~30ms mean). Simulated floor under delivery
+    // jitter: 36ms still nicks, 42ms holds clear on every seed.
+    assert(pacing.DEFAULT_TARGET_LATENCY_SECONDS >= 0.036, 'below this the queue floor reaches zero under jitter');
+    assert(pacing.DEFAULT_TARGET_LATENCY_SECONDS <= 0.06, 'beyond this latency is being spent without evidence');
   });
 });
 
