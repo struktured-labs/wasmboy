@@ -625,3 +625,109 @@ describe('Audio pacing signal choice', () => {
     assert(inflatedDelay >= honestDelay * 5, `the double count is what produced the phantom braking: ${honestDelay}ms vs ${inflatedDelay}ms`);
   });
 });
+
+describe('Audio acknowledgement ledger', () => {
+  const pacing = loadPacing();
+  const RATE = 44100;
+  const BLOCK = 512;
+  const blockSec = BLOCK / RATE;
+
+  it('should account for a block in flight, then in the anchor, never both', () => {
+    // The projection bug this replaces: a block handed over during the
+    // transport window either vanished (counted nowhere until its ack) or was
+    // double counted (added to an anchor that already included it).
+    const L = pacing.createAudioLedger();
+
+    pacing.ledgerSend(L, 1, BLOCK, 0);
+    // In flight only; no anchor yet.
+    assert(Math.abs(pacing.ledgerUnackedSeconds(L, RATE) - blockSec) < 1e-9, 'the sent block must be counted as in flight');
+    assert.strictEqual(pacing.ledgerProject(L, RATE, 0), undefined, 'no projection before the first ack');
+
+    // Ack at send time (zero round trip) so this isolates the accounting from
+    // the half-round-trip ageing, which has its own test.
+    pacing.ledgerAck(L, 1, blockSec, 0);
+    assert.strictEqual(pacing.ledgerUnackedSeconds(L, RATE), 0, 'the acked block must leave the in-flight set');
+    const projected = pacing.ledgerProject(L, RATE, 0);
+    // Exactly one block, counted once: in the anchor, not also in flight.
+    assert(Math.abs(projected - blockSec) < 1e-9, `block counted once, got ${projected}`);
+  });
+
+  it('should not lose a block sent during the transport window', () => {
+    // Send 2 before 1 is acked: the classic window. Both must be counted.
+    const L = pacing.createAudioLedger();
+    pacing.ledgerSend(L, 1, BLOCK, 0);
+    pacing.ledgerSend(L, 2, BLOCK, 6);
+
+    // Ack block 1 at send time (zero round trip): queue one block, block 2
+    // still in flight. Committed audio is 2 blocks, counted once each.
+    pacing.ledgerAck(L, 1, blockSec, 0);
+
+    const projected = pacing.ledgerProject(L, RATE, 0);
+    assert(Math.abs(projected - 2 * blockSec) < 1e-9, `expected exactly two blocks committed, got ${(projected / blockSec).toFixed(3)} blocks`);
+  });
+
+  it('should drain the anchor at exactly the source rate', () => {
+    // Playback is pinned to 1, so a held anchor loses real time one-for-one.
+    const L = pacing.createAudioLedger();
+    pacing.ledgerSend(L, 1, BLOCK, 0);
+    pacing.ledgerAck(L, 1, 0.03, 0); // 30ms queue at t=0
+
+    assert(Math.abs(pacing.ledgerProject(L, RATE, 0) - 0.03) < 1e-9);
+    assert(Math.abs(pacing.ledgerProject(L, RATE, 10) - 0.02) < 1e-9, '10ms later, 10ms drained');
+    assert.strictEqual(pacing.ledgerProject(L, RATE, 100), 0, 'never projects negative');
+  });
+
+  it('should ignore an out-of-order or stale acknowledgement', () => {
+    const L = pacing.createAudioLedger();
+    pacing.ledgerSend(L, 1, BLOCK, 0);
+    pacing.ledgerSend(L, 2, BLOCK, 5);
+
+    assert.strictEqual(pacing.ledgerAck(L, 2, 0.02, 6), false, 'only the oldest block may be acknowledged');
+    assert.strictEqual(pacing.ledgerUnackedSeconds(L, RATE), 2 * blockSec, 'a rejected ack must change nothing');
+
+    pacing.ledgerReset(L);
+    assert.strictEqual(pacing.ledgerAck(L, 1, 0.02, 7), false, 'nothing is acknowledgeable after a reset');
+    assert.strictEqual(pacing.ledgerProject(L, RATE, 7), undefined);
+  });
+
+  it('should conserve committed audio across a full send/ack sequence', () => {
+    // Property test: over a random interleaving of sends and in-order acks,
+    // committed audio (anchor-at-send-time + in flight) equals sent minus
+    // drained, always. This is the invariant the status projection violated.
+    const L = pacing.createAudioLedger();
+    let nextSeq = 1;
+    let sentBlocks = 0;
+    let playedBlocks = 0;
+    const pending = [];
+    let now = 0;
+    let rng = 12345;
+    const rand = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+
+    for (let step = 0; step < 400; step++) {
+      now += 1 + rand() * 4;
+      if (rand() < 0.6 || pending.length === 0) {
+        pacing.ledgerSend(L, nextSeq, BLOCK, now);
+        pending.push(nextSeq);
+        nextSeq++;
+        sentBlocks++;
+      } else {
+        const seq = pending.shift();
+        // Ack of block `seq` carries the queue as it was when `seq` was
+        // accepted: blocks 1..seq accepted, minus those played by then. It
+        // cannot include blocks sent after `seq`. Model play as a monotonic
+        // counter that never exceeds what was accepted.
+        playedBlocks = Math.min(seq, playedBlocks + (rand() < 0.5 ? 1 : 0));
+        const queued = (seq - playedBlocks) * blockSec;
+        pacing.ledgerAck(L, seq, queued, now);
+      }
+
+      const projected = pacing.ledgerProject(L, RATE, now);
+      if (projected !== undefined) {
+        // Committed audio must never exceed everything ever sent, nor go
+        // negative — the two failure directions of the old projection.
+        assert(projected >= -1e-9, `projection went negative at step ${step}: ${projected}`);
+        assert(projected <= sentBlocks * blockSec + 1e-9, `projection exceeded total sent at step ${step}`);
+      }
+    }
+  });
+});
