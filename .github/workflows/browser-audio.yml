@@ -26,6 +26,9 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
+      # Uses the pinned playwright from devDependencies, so CI gets the official
+      # build for the runner OS. test:browser fails hard if it is missing, so
+      # this job cannot pass without the browser test actually running.
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
       - name: Build

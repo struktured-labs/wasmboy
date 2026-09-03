@@ -39,7 +39,16 @@ const renderThroughLib = async () => {
 
   await WasmBoy.config({ headless: true, gameboySpeed: 100.0, isGbcEnabled: true });
   await WasmBoy.loadROM(romBytes);
-  await WasmBoy._runWasmExport('executeMultipleFrames', [frames]);
+
+  // The worker RPC times out after one second by default. A cold CI runner can
+  // take longer than that to run several hundred frames, which surfaces as a
+  // spurious "Message dropped". Run in small batches with a generous timeout so
+  // slowness never reads as a failure.
+  const BATCH = 60;
+  const TIMEOUT_MS = 30000;
+  for (let done = 0; done < frames; done += BATCH) {
+    await WasmBoy._runWasmExport('executeMultipleFrames', [Math.min(BATCH, frames - done)], TIMEOUT_MS);
+  }
 
   const location = await WasmBoy._getWasmConstant('FRAME_LOCATION');
   return Buffer.from(await WasmBoy._getWasmMemorySection(location, location + FRAME_BYTES));
