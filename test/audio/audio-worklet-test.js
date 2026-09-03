@@ -123,16 +123,19 @@ describe('WasmBoy AudioWorklet ring buffer', () => {
     inputPort.onmessage({
       data: {
         type: 'write-unsigned',
-        buffer: new Uint8Array([255, 1, 128, 128]).buffer,
+        // 129 is the encoding's true silence: the core stores value + 1
+        // around a 128 centre. It must decode to exactly zero with no gate.
+        buffer: new Uint8Array([255, 1, 129, 129]).buffer,
         numberOfSamples: 2,
         fps: 60,
         allowFastSpeedStretching: false
       }
     });
 
+    // Decoded around the true centre of 129: (byte - 129) / 127 / 2.5.
     const output = render(processor, 2);
-    assert.ok(Math.abs(output.left[0] - 0.4) < 0.00001);
-    assert.ok(Math.abs(output.right[0] + 0.4) < 0.00001);
+    assert.ok(Math.abs(output.left[0] - (255 - 129) / 127 / 2.5) < 0.00001);
+    assert.ok(Math.abs(output.right[0] - (1 - 129) / 127 / 2.5) < 0.00001);
     assert.strictEqual(output.left[1], 0);
     assert.strictEqual(output.right[1], 0);
 
@@ -153,9 +156,10 @@ describe('WasmBoy AudioWorklet ring buffer', () => {
       }
     });
 
+    // Decoded around the true centre of 129: (byte - 129) / 127 / 2.5.
     const output = render(processor, 2).left;
-    assert.ok(Math.abs(output[0] - 0.4) < 0.00001);
-    assert.ok(Math.abs(output[1] + 0.4) < 0.00001);
+    assert.ok(Math.abs(output[0] - (255 - 129) / 127 / 2.5) < 0.00001);
+    assert.ok(Math.abs(output[1] - (1 - 129) / 127 / 2.5) < 0.00001);
     assert.strictEqual(processor.queuedFrames, 0);
   });
 });
