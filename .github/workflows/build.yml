@@ -48,6 +48,12 @@ jobs:
       - name: Test core
         run: npm run test:core:nobuild
 
+      # Properties that hold for any ROM: the library must render what the core
+      # renders, and a run must be reproducible. A release broke both while
+      # every recorded-output suite stayed green.
+      - name: Test render harness
+        run: npm run test:harness
+
       - name: Test integration
         run: npm run test:integration:nobuild
 
