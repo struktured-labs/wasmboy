@@ -457,6 +457,8 @@ export interface WasmBoyAudioDiagnostics {
     blocksInFlight?: number;
     /** Audio handed over but not yet acknowledged */
     unackedSeconds?: number;
+    /** Which estimator paces the producer: 'ack-ledger' or 'status' */
+    pacingSource?: string;
     /** Sequence of the last acknowledged block */
     lastAckSequence?: number;
   };
