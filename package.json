@@ -11,7 +11,7 @@
     "gameboy-color"
   ],
   "author": "Aaron Turner",
-  "version": "0.8.11",
+  "version": "0.8.12",
   "license": "GPL-3.0-or-later",
   "homepage": "https://wasmboy.app",
   "repository": {
@@ -84,7 +84,7 @@
     "test:debugger": "npm run test:debugger:autoload",
     "test:debugger:autoload": "node node_modules/mocha/bin/_mocha test/debugger/auto-load-rom.js --exit",
     "test:types": "tsc --project test/types/tsconfig.json",
-    "test:harness": "node --experimental-worker node_modules/mocha/bin/_mocha test/harness/render-harness.js --timeout 120000 --exit",
+    "test:harness": "node --experimental-worker node_modules/mocha/bin/_mocha test/harness/render-harness.js test/harness/audio-ab.js --timeout 180000 --exit",
     "test:core": "run-s build test:core:savestate test:core:oam test:core:wave",
     "test:core:nobuild": "run-s test:core:savestate test:core:oam test:core:wave",
     "test:core:savestate": "node --experimental-worker node_modules/mocha/bin/_mocha test/core/save-state.js --timeout 10000 --exit",

@@ -1,0 +1,49 @@
+{
+  "rom": "tobutobugirl",
+  "startFrame": 120,
+  "endFrame": 480,
+  "reference": "tobutobugirl.mgba-120-480.s16le",
+  "referenceRate": 131072,
+  "measured": {
+    "lagMs": -20,
+    "envelopeCorr": 0.8756,
+    "spectrumCorr": 0.7207
+  },
+  "thresholds": {
+    "minEnvelopeCorr": 0.8556,
+    "minSpectrumCorr": 0.6907,
+    "maxAbsLagMs": 30
+  },
+  "spectrum": [
+    {
+      "frequency": 520,
+      "reference": 0.45441750823395116,
+      "candidate": 0.35523466674456816
+    },
+    {
+      "frequency": 660,
+      "reference": 0.46862423435830175,
+      "candidate": 0.9791216583165218
+    },
+    {
+      "frequency": 990,
+      "reference": 0.40070925859808537,
+      "candidate": 0.1708996510724136
+    },
+    {
+      "frequency": 1050,
+      "reference": 0.3649674551902737,
+      "candidate": 0.3195392287968337
+    },
+    {
+      "frequency": 1410,
+      "reference": 0.3678263707534268,
+      "candidate": 0.29101013092745226
+    },
+    {
+      "frequency": 1560,
+      "reference": 1,
+      "candidate": 1
+    }
+  ]
+}
