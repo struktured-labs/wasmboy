@@ -353,6 +353,20 @@ export interface WasmBoyConfig {
   /** Maximum number of auto save states to keep (default: 10) */
   maxNumberOfAutoSaveStates?: number;
   /**
+   * Stable IndexedDB key for battery-backed cartridge RAM. When set, saves are
+   * stored under this key instead of the cartridge header, so they survive a ROM
+   * revision (whose header, and thus the default key, changes). RAM is also
+   * dual-written to the header record for rollback compatibility.
+   * (default: null)
+   */
+  cartridgeRamStorageKey?: string | null;
+  /**
+   * Declared SRAM size in bytes to persist under cartridgeRamStorageKey. RAM is
+   * cropped to this size (not the full 128KiB backing) before storage. Required
+   * with cartridgeRamStorageKey; must be an integer in 1..131072. (default: null)
+   */
+  cartridgeRamStorageSize?: number | null;
+  /**
    * Speed multiplier - sets gameboyFrameRate = speed * 60
    * This is an alias that converts to gameboyFrameRate
    */
