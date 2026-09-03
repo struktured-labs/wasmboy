@@ -207,7 +207,8 @@ commonTest.getDirectories(testRomsPath).forEach(directory => {
             })
             .then(() => {
               done();
-            });
+            })
+            .catch(done);
         });
 
         it('should match the expected output in the .output file. If it does not exist, create the file.', function(done) {
@@ -234,7 +235,9 @@ commonTest.getDirectories(testRomsPath).forEach(directory => {
               await goldenImageDataArrayCompare(goldenFile, imageDataArray, directory, testRom);
               done();
             };
-            wasmboyOutputImageTest();
+            // Without the catch, a golden mismatch rejects unhandled and reads
+            // as a Mocha timeout, hiding the real failure.
+            wasmboyOutputImageTest().catch(done);
           }, timeToWaitForTestRom);
         });
       });
