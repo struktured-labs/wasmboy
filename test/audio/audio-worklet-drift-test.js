@@ -96,20 +96,21 @@ const createHarness = ({ contextSampleRate, driftRatio = 1, targetLatencySeconds
 };
 
 describe('AudioWorklet drift and latency', () => {
-  it('should settle at the requested latency rather than wherever it started', () => {
+  it('should not pitch up to drain a backlog', () => {
+    // Draining a backlog is pacing's job. Consuming faster put a constant
+    // sharp offset on the output; the worklet now leaves the queue where it is
+    // and keeps the pitch exact.
     const harness = createHarness({ contextSampleRate: 48000, targetLatencySeconds: 0.028 });
 
-    // Hand it a large backlog up front, which is what a producer that queues
-    // ahead of the target does.
     const backlog = 2500;
     harness.processor._write(new Float32Array(backlog), new Float32Array(backlog), 1);
-    assert(harness.latencyMs() > 50, `expected a starting backlog, got ${harness.latencyMs().toFixed(1)}ms`);
+    const startingLatency = harness.latencyMs();
+    assert(startingLatency > 50, `expected a starting backlog, got ${startingLatency.toFixed(1)}ms`);
 
     harness.runSeconds(20);
 
-    const latency = harness.latencyMs();
-    assert(latency <= 31, `steady-state latency ${latency.toFixed(1)}ms exceeded the 31ms budget`);
-    assert(latency >= 15, `latency ${latency.toFixed(1)}ms collapsed toward underrun`);
+    assert.strictEqual(harness.processor.driftTrim, 0, 'a backlog must not bend the pitch');
+    assert(harness.latencyMs() <= startingLatency + 5, 'the backlog should not grow on its own');
   });
 
   it('should not accumulate underruns when the producer runs slightly slow', () => {
@@ -126,20 +127,17 @@ describe('AudioWorklet drift and latency', () => {
     assert.strictEqual(harness.processor.droppedFrames, 0, `dropped ${harness.processor.droppedFrames} frames`);
   });
 
-  it('should not accumulate drops or latency when the producer runs slightly fast', () => {
-    // The mirror image: 0.3% fast fills the queue until it overflows.
+  it('should keep pitch exact under a fast producer, even at the cost of drops', () => {
+    // Without pacing in the loop — this harness has none — a persistently fast
+    // producer fills the ring until it sheds oldest frames. That is the
+    // pressure valve now; bending pitch to absorb it was audible. The closed
+    // loop suite shows pacing prevents the situation in the shipped system.
     const harness = createHarness({ contextSampleRate: 48000, driftRatio: 1.003, targetLatencySeconds: 0.028 });
 
-    harness.runSeconds(5);
-    const dropsAfterSettling = harness.processor.droppedFrames;
+    harness.runSeconds(35);
 
-    harness.runSeconds(30);
-
-    const newDrops = harness.processor.droppedFrames - dropsAfterSettling;
-    assert.strictEqual(newDrops, 0, `dropped ${newDrops} frames over 30s`);
-
-    const latency = harness.latencyMs();
-    assert(latency <= 31, `latency grew to ${latency.toFixed(1)}ms`);
+    assert.strictEqual(harness.processor.driftTrim, 0, 'a full queue must not bend the pitch');
+    assert.strictEqual(harness.processor.underrunFrames, 0);
   });
 
   it('should hold the target at a context rate that matches the source', () => {
