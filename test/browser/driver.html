@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+  </head>
+  <body>
+    <script>
+      // Render a block of unsigned emulator samples through the real, shipped
+      // AudioWorklet in a real browser engine, and hand the output back.
+      //
+      // OfflineAudioContext drives the worklet's process() on a deterministic
+      // clock at faster than realtime, so there is no wall-clock jitter and the
+      // result is reproducible: this measures the DSP path — decode, gate,
+      // resample — exactly as the browser runs it, not a Node reimplementation
+      // of it. The realtime scheduling question is a separate, non-deterministic
+      // one and is not what this answers.
+      window.renderThroughWorklet = async ({ workletUrl, samplesB64, contextRate, targetLatencySeconds }) => {
+        const binary = atob(samplesB64);
+        const u8 = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) u8[i] = binary.charCodeAt(i);
+        const frameCount = u8.length >> 1;
+
+        // Long enough to drain the whole input at the read ratio, plus slack.
+        const renderFrames = Math.ceil((frameCount * contextRate) / 44100) + 4096;
+        const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: renderFrames, sampleRate: contextRate });
+        await ctx.audioWorklet.addModule(workletUrl);
+
+        const node = new AudioWorkletNode(ctx, 'wasmboy-audio-output', {
+          numberOfInputs: 0,
+          numberOfOutputs: 1,
+          outputChannelCount: [2],
+          processorOptions: { sourceSampleRate: 44100, capacityFrames: 1 << 20, targetLatencySeconds }
+        });
+        node.connect(ctx.destination);
+
+        // Hand the whole capture over as one block on the direct port shape the
+        // emulator worker uses (a sequence tag routes it through _writeUnsigned).
+        node.port.postMessage(
+          { type: 'write-unsigned', buffer: u8.buffer, numberOfSamples: frameCount, fps: 60, allowFastSpeedStretching: false, sequence: 1 },
+          [u8.buffer]
+        );
+
+        // Let the worklet's message pump run before rendering, so the write is
+        // in the ring before process() is first called. Offline rendering does
+        // not otherwise guarantee message delivery precedes it.
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        const rendered = await ctx.startRendering();
+        const left = rendered.getChannelData(0);
+        const right = rendered.getChannelData(1);
+
+        // Trim leading silence: the ring primes before it emits, so the output
+        // is delayed by the priming threshold. Find first non-zero.
+        let start = 0;
+        while (start < left.length && left[start] === 0 && right[start] === 0) start++;
+
+        // Return a compact summary plus a decimated trace, so the assertion runs
+        // in Node without shipping a megabyte of floats back per call.
+        let sumSq = 0;
+        let peak = 0;
+        let nonZero = 0;
+        for (let i = start; i < left.length; i++) {
+          const v = (left[i] + right[i]) / 2;
+          sumSq += v * v;
+          peak = Math.max(peak, Math.abs(v));
+          if (v !== 0) nonZero++;
+        }
+        const emitted = left.length - start;
+        // Fixed decimation from the first emitted frame, so a caller can rebuild
+        // the reference at the identical step and lag-search for the priming
+        // delay rather than fighting a drifting phase.
+        const DECIMATE = 8;
+        const trace = [];
+        for (let i = start; i < left.length; i += DECIMATE) trace.push((left[i] + right[i]) / 2);
+
+        // Exactly-zero fraction is the noise gate's fingerprint: it forces every
+        // quiet sample to 0, which the transparent decode never does.
+        let exactlyZero = 0;
+        for (let i = start; i < left.length; i++) if (left[i] === 0 && right[i] === 0) exactlyZero++;
+
+        return {
+          contextRate: ctx.sampleRate,
+          emitted,
+          nonZero,
+          exactlyZeroFraction: emitted ? exactlyZero / emitted : 0,
+          rms: emitted ? Math.sqrt(sumSq / emitted) : 0,
+          peak,
+          decimate: DECIMATE,
+          trace
+        };
+      };
+    </script>
+  </body>
+</html>

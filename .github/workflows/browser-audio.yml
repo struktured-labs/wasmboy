@@ -1,0 +1,34 @@
+name: Browser Audio
+
+# Runs the audio path through a real browser engine. Separate from the main
+# build so the core suites stay fast and need no browser; this job installs
+# Chromium and renders the shipped worklet in it, catching DSP regressions —
+# the class that shipped as audible distortion — where they actually occur.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    paths:
+      - 'lib/audio/**'
+      - 'core/sound/**'
+      - 'test/browser/**'
+  workflow_dispatch:
+
+jobs:
+  browser-audio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Build
+        run: npm run build
+      - name: Verify audio in a real browser
+        run: npm run test:browser
