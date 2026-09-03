@@ -72,6 +72,7 @@
     "test:accuracy": "run-s build test:accuracy:nobuild",
     "test:accuracy:nobuild": "node --experimental-worker node_modules/mocha/bin/_mocha test/accuracy/accuracy-test.js --exit",
     "test:controller": "node --experimental-worker node_modules/mocha/bin/_mocha test/controller/virtual-controller-test.js --exit",
+    "test:memory": "node node_modules/mocha/bin/_mocha test/memory/ram-storage-test.js test/memory/ram-persistence-test.js --exit",
     "test:perf": "npm run test:performance",
     "audio:capture": "node test/audio/capture-channels.js",
     "test:audio": "node --experimental-worker node_modules/mocha/bin/_mocha test/audio/audio-worklet-test.js test/audio/audio-worklet-drift-test.js test/audio/audio-pacing-test.js test/audio/audio-diagnostics-test.js --exit",
