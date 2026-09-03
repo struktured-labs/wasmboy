@@ -6,12 +6,14 @@ const WasmBoy = require('../../dist/wasmboy.wasm.cjs').WasmBoy;
 
 // File management
 const fs = require('fs');
+const path = require('path');
+const { execFileSync } = require('child_process');
 
 // Assertion
 const assert = require('assert');
 
 // Golden file handling
-const { goldenFileCompareOrCreate, goldenImageDataArrayCompare } = require('../golden-compare');
+const { goldenFileCompareOrCreate } = require('../golden-compare');
 
 // Some Timeouts for specified test roms
 const TEST_ROM_DEFAULT_TIMEOUT = 7500;
@@ -181,62 +183,26 @@ commonTest.getDirectories(testRomsPath).forEach(directory => {
   describe(directory, () => {
     // Describe for each test rom
     testRoms.forEach(testRom => {
-      describe(testRom, () => {
-        // Default: Wait 60 seconds for every test
-        // Stop watch-ed cpu_instructs and it took about 55
-        // So lets see how this goes
-        let timeToWaitForTestRom = TEST_ROM_DEFAULT_TIMEOUT;
+      const timeToWaitForTestRom = TEST_ROM_TIMEOUT[testRom] || TEST_ROM_DEFAULT_TIMEOUT;
 
-        // Define our wasmboy instance
-        // Not using arrow functions, as arrow function timeouts were acting up
-        beforeEach(function(done) {
-          // Set a timeout of 7500, takes a while for wasm module to parse
-          this.timeout(7500);
+      it(`should match the expected output for ${testRom}`, function() {
+        // Fresh process per ROM: the library singleton retains emulator memory
+        // across reset(), so a predecessor leaks into the next ROM.
+        const childTimeout = timeToWaitForTestRom + 25000;
+        this.timeout(childTimeout + 5000);
 
-          // Get our current test rom timeout
-          if (TEST_ROM_TIMEOUT[testRom]) {
-            timeToWaitForTestRom = TEST_ROM_TIMEOUT[testRom];
-          }
-
-          // Read the test rom a a Uint8Array and pass to wasmBoy
-          const testRomArray = new Uint8Array(fs.readFileSync(`${directory}/${testRom}`));
-
-          resetWasmBoyAccuracy()
-            .then(() => {
-              return WasmBoy.loadROM(testRomArray);
-            })
-            .then(() => {
-              done();
-            });
-        });
-
-        it('should match the expected output in the .output file. If it does not exist, create the file.', function(done) {
-          // Set our timeout
-          this.timeout(timeToWaitForTestRom + 10000);
-
-          WasmBoy.play();
-
-          console.log(' ');
-          console.log(`Running the following test rom: ${directory}/${testRom}`);
-          console.log(`Waiting for this amount of time: ${Math.floor(timeToWaitForTestRom / 1000)}s`);
-
-          setTimeout(() => {
-            const wasmboyOutputImageTest = async () => {
-              await WasmBoy.pause();
-
-              const testDataPath = testRom.replace('.gb', '.golden.output.json');
-              const goldenFile = `${directory}/${testDataPath}`;
-
-              console.log(`Checking results for the following test rom: ${goldenFile}`);
-
-              const imageDataArray = await commonTest.getImageDataFromFrame();
-
-              await goldenImageDataArrayCompare(goldenFile, imageDataArray, directory, testRom);
-              done();
-            };
-            wasmboyOutputImageTest();
-          }, timeToWaitForTestRom);
-        });
+        const helper = path.resolve(__dirname, 'helpers/run-accuracy-rom.js');
+        try {
+          execFileSync(process.execPath, [helper, '--dir', directory, '--rom', testRom, '--wait', String(timeToWaitForTestRom)], {
+            encoding: 'utf8',
+            stdio: ['ignore', 'ignore', 'pipe'],
+            // Synchronous spawn blocks the event loop, so mocha's own timeout
+            // cannot fire; bound the child so a hang does not stall the job.
+            timeout: childTimeout
+          });
+        } catch (error) {
+          throw new Error(`${testRom} did not match its golden output: ${(error.stderr || error.message || '').trim()}`);
+        }
       });
     });
   });
