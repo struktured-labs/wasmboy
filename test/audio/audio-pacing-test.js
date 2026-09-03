@@ -101,6 +101,7 @@ const createLoop = ({ contextSampleRate = 48000, driftRatio = 1, targetLatencySe
   let nextSendAt = 0;
   let reportedLatency = 0;
   let quantaSinceReport = 0;
+  let minQueuedFrames = Infinity;
   const inFlight = [];
 
   const step = () => {
@@ -124,6 +125,7 @@ const createLoop = ({ contextSampleRate = 48000, driftRatio = 1, targetLatencySe
 
     processor.process([], outputs);
     now += quantumSeconds;
+    minQueuedFrames = Math.min(minQueuedFrames, processor.queuedFrames);
 
     if (++quantaSinceReport >= STATUS_INTERVAL_QUANTA) {
       quantaSinceReport = 0;
@@ -137,6 +139,7 @@ const createLoop = ({ contextSampleRate = 48000, driftRatio = 1, targetLatencySe
 
   const sample = () => ({
     latencyMs: (processor.queuedFrames / SOURCE_SAMPLE_RATE) * 1000,
+    minLatencyMs: (minQueuedFrames / SOURCE_SAMPLE_RATE) * 1000,
     queuedFrames: processor.queuedFrames,
     underrunFrames: processor.underrunFrames,
     droppedFrames: processor.droppedFrames,
@@ -195,7 +198,10 @@ describe('Audio producer pacing (closed loop)', () => {
     const late = loop.sample();
 
     assert.strictEqual(late.underrunFrames - early.underrunFrames, 0, 'underruns accumulated with a slow producer');
-    assert(late.latencyMs >= 10, `queue collapsed to ${late.latencyMs.toFixed(1)}ms`);
+    // The queue rides a sawtooth of one write block around the guard's
+    // equilibrium, so an instantaneous reading can sit in a trough. What
+    // matters is that the trough never approaches empty.
+    assert(late.minLatencyMs >= 3, `queue trough reached ${late.minLatencyMs.toFixed(1)}ms`);
   });
 
   it('should survive main-thread arrival jitter on the relayed path', () => {
