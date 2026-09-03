@@ -22,7 +22,7 @@ export default class HelpComponent extends Component {
         <div>
           <ul>
             <li>
-              <b>Arrow Keys, Numpad 8 / 6 / 5 / 4</b> - D-Pad
+              <b>Arrow Keys, WASD, Numpad 8 / 6 / 5 / 4</b> - D-Pad
             </li>
             <li>
               <b>X, C, Semicolon, Numpad 7</b> - A
