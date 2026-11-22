@@ -55,7 +55,7 @@ describe('WasmBoy AudioWorklet ring buffer', () => {
   };
 
   it('preserves stereo samples in order', () => {
-    const processor = new Processor({ processorOptions: { capacityFrames: 8, startThresholdFrames: 1 } });
+    const processor = new Processor({ processorOptions: { capacityFrames: 8, startThresholdFrames: 1, declickTimeConstantSeconds: 0 } });
     write(processor, [1, 2, 3], [4, 5, 6]);
 
     const output = render(processor, 3);
@@ -65,7 +65,7 @@ describe('WasmBoy AudioWorklet ring buffer', () => {
   });
 
   it('drops the oldest audio instead of growing without bound', () => {
-    const processor = new Processor({ processorOptions: { capacityFrames: 4, startThresholdFrames: 1 } });
+    const processor = new Processor({ processorOptions: { capacityFrames: 4, startThresholdFrames: 1, declickTimeConstantSeconds: 0 } });
     write(processor, [1, 2, 3], [1, 2, 3]);
     write(processor, [4, 5, 6], [4, 5, 6]);
 
@@ -74,7 +74,7 @@ describe('WasmBoy AudioWorklet ring buffer', () => {
   });
 
   it('outputs silence on underrun and reports queue status', () => {
-    const processor = new Processor({ processorOptions: { capacityFrames: 8, startThresholdFrames: 1 } });
+    const processor = new Processor({ processorOptions: { capacityFrames: 8, startThresholdFrames: 1, declickTimeConstantSeconds: 0 } });
     assert.deepStrictEqual(render(processor, 2).left, [0, 0]);
     assert.strictEqual(processor.underrunFrames, 0);
 
@@ -89,7 +89,7 @@ describe('WasmBoy AudioWorklet ring buffer', () => {
   });
 
   it('supports fractional playback rates', () => {
-    const processor = new Processor({ processorOptions: { capacityFrames: 8, startThresholdFrames: 1 } });
+    const processor = new Processor({ processorOptions: { capacityFrames: 8, startThresholdFrames: 1, declickTimeConstantSeconds: 0 } });
     write(processor, [0, 1, 2, 3], [0, 1, 2, 3], 0.5);
 
     assert.deepStrictEqual(render(processor, 4).left, [0, 0.5, 1, 1.5]);
@@ -111,7 +111,7 @@ describe('WasmBoy AudioWorklet ring buffer', () => {
   });
 
   it('converts raw interleaved emulator samples on a direct port', () => {
-    const processor = new Processor({ processorOptions: { capacityFrames: 8, startThresholdFrames: 1 } });
+    const processor = new Processor({ processorOptions: { capacityFrames: 8, startThresholdFrames: 1, declickTimeConstantSeconds: 0 } });
     const inputPort = {
       messages: [],
       onmessage: undefined,
@@ -144,7 +144,7 @@ describe('WasmBoy AudioWorklet ring buffer', () => {
   });
 
   it('applies emulator speed to direct audio playback', () => {
-    const processor = new Processor({ processorOptions: { capacityFrames: 8, startThresholdFrames: 1 } });
+    const processor = new Processor({ processorOptions: { capacityFrames: 8, startThresholdFrames: 1, declickTimeConstantSeconds: 0 } });
     processor.port.onmessage({ data: { type: 'set-speed', speed: 2 } });
     processor.port.onmessage({
       data: {
@@ -161,5 +161,39 @@ describe('WasmBoy AudioWorklet ring buffer', () => {
     assert.ok(Math.abs(output[0] - (255 - 129) / 127 / 2.5) < 0.00001);
     assert.ok(Math.abs(output[1] - (1 - 129) / 127 / 2.5) < 0.00001);
     assert.strictEqual(processor.queuedFrames, 0);
+  });
+
+  it('glides into and out of an underrun instead of stepping', () => {
+    // A held DC level, as a Game Boy DAC produces, then the queue runs dry and
+    // refills. The old worklet stepped to 0 and back: a click at each edge.
+    const processor = new Processor({ processorOptions: { capacityFrames: 4096, startThresholdFrames: 128, targetLatencySeconds: 0.01 } });
+    const level = 0.2;
+    write(processor, new Array(256).fill(level), new Array(256).fill(level));
+    const first = render(processor, 1024).left;
+    write(processor, new Array(2048).fill(level), new Array(2048).fill(level));
+    const second = render(processor, 1024).left;
+    const out = first.concat(second);
+    let largestStep = 0;
+    for (let i = 1; i < out.length; i++) largestStep = Math.max(largestStep, Math.abs(out[i] - out[i - 1]));
+    assert.ok(largestStep < level / 20, `largest step ${largestStep} — a hard edge`);
+    // It still reaches the signal and still falls silent.
+    assert.ok(Math.abs(second[second.length - 1] - level) < 0.001);
+    assert.ok(Math.abs(first[first.length - 1]) < 0.01);
+  });
+
+  it('raises its target after an underrun, up to the ceiling, and reports it', () => {
+    const processor = new Processor({ processorOptions: { targetLatencySeconds: 0.042, maxTargetLatencySeconds: 0.1 } });
+    const startTarget = processor.targetFrames;
+    for (let episode = 0; episode < 6; episode++) {
+      write(processor, new Array(processor.targetFrames).fill(0.1), new Array(processor.targetFrames).fill(0.1));
+      render(processor, processor.targetFrames + 256);
+    }
+    assert.strictEqual(processor.underrunEvents, 6);
+    assert.ok(processor.targetFrames > startTarget);
+    assert.strictEqual(processor.targetFrames, Math.round(0.1 * 44100));
+    for (let i = 0; i < 8; i++) render(processor, 128);
+    const status = processor.port.messages.filter(m => m.type === 'status').pop();
+    assert.ok(Math.abs(status.targetLatencySeconds - 0.1) < 0.001);
+    assert.strictEqual(status.underrunEvents, 6);
   });
 });

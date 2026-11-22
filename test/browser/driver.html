@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
@@ -87,6 +87,153 @@
           peak,
           decimate: DECIMATE,
           trace
+        };
+      };
+
+      // Starved delivery: the device cannot always produce audio in time.
+      //
+      // A slow or throttled CPU (the Tesla in-car browser was the report) hands
+      // blocks over late and in bursts. Each late block that empties the ring
+      // used to be a hard cut to zero and a hard jump back, which is a click
+      // at both edges. This replays a fixed, seeded delivery schedule — real
+      // time on average, with jitter and periodic stalls — through the shipped
+      // worklet on an OfflineAudioContext, so the result is deterministic.
+      // Blocks are posted on the worker's direct input port, and rendering
+      // resumes only once the worklet has acknowledged them.
+      window.renderStarved = async ({
+        workletUrl,
+        contextRate,
+        targetLatencySeconds,
+        seconds,
+        stallEveryBlocks,
+        stallMs,
+        jitter,
+        producerSpeed = 1
+      }) => {
+        const SOURCE_RATE = 44100;
+        const BLOCK = 512;
+        const FREQ = 440;
+        const CENTER = 150; // off the 129 midpoint, as a held Game Boy DAC level is
+        const AMP = 40;
+        const totalFrames = Math.round(seconds * SOURCE_RATE);
+        const blocks = Math.ceil(totalFrames / BLOCK);
+
+        // Seeded LCG so every run sees the same schedule.
+        let seed = 12345;
+        const rand = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
+
+        const period = BLOCK / SOURCE_RATE;
+        const due = [];
+        let stallUntil = 0;
+        for (let k = 0; k < blocks; k++) {
+          // A CPU that cannot hold full speed produces less than real time.
+          const ideal = (k * period) / producerSpeed;
+          if (stallEveryBlocks && k > 0 && k % stallEveryBlocks === 0) stallUntil = ideal + stallMs / 1000;
+          const jittered = ideal + (rand() - 0.5) * 2 * jitter * period;
+          // Delivery is ordered: a late block holds back the ones behind it.
+          due.push(Math.max(0, jittered, stallUntil, k > 0 ? due[k - 1] : 0));
+        }
+
+        const renderFrames = Math.ceil((seconds / producerSpeed + 0.5) * contextRate);
+        const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: renderFrames, sampleRate: contextRate });
+        await ctx.audioWorklet.addModule(workletUrl);
+        const node = new AudioWorkletNode(ctx, 'wasmboy-audio-output', {
+          numberOfInputs: 0,
+          numberOfOutputs: 1,
+          outputChannelCount: [2],
+          processorOptions: { sourceSampleRate: SOURCE_RATE, targetLatencySeconds }
+        });
+        node.connect(ctx.destination);
+        let lastStatus = {};
+        node.port.onmessage = e => {
+          if (e.data && e.data.type === 'status') lastStatus = e.data;
+        };
+        const channel = new MessageChannel();
+        node.port.postMessage({ type: 'connect', port: channel.port1 }, [channel.port1]);
+        const acks = new Map();
+        channel.port2.onmessage = e => {
+          const m = e.data || {};
+          if (m.type === 'ack' && acks.has(m.sequence)) {
+            acks.get(m.sequence)();
+            acks.delete(m.sequence);
+          }
+        };
+
+        const makeBlock = k => {
+          const start = k * BLOCK;
+          const n = Math.min(BLOCK, totalFrames - start);
+          const u8 = new Uint8Array(n * 2);
+          for (let i = 0; i < n; i++) {
+            const v = Math.round(CENTER + AMP * Math.sin((2 * Math.PI * FREQ * (start + i)) / SOURCE_RATE));
+            u8[i * 2] = v;
+            u8[i * 2 + 1] = v;
+          }
+          return { u8, n };
+        };
+        const send = k => {
+          const { u8, n } = makeBlock(k);
+          const sequence = k + 1;
+          const acked = new Promise(resolve => acks.set(sequence, resolve));
+          channel.port2.postMessage(
+            { type: 'write-unsigned', buffer: u8.buffer, numberOfSamples: n, fps: 60, allowFastSpeedStretching: false, sequence },
+            [u8.buffer]
+          );
+          return acked;
+        };
+
+        // Group blocks by the render quantum they become due in.
+        const groups = new Map();
+        due.forEach((t, k) => {
+          const q = Math.ceil((t * contextRate) / 128);
+          if (!groups.has(q)) groups.set(q, []);
+          groups.get(q).push(k);
+        });
+        const quanta = Array.from(groups.keys()).sort((a, b) => a - b);
+        // Blocks due at time zero go in before rendering starts.
+        if (quanta[0] === 0) {
+          await Promise.all(groups.get(0).map(send));
+          quanta.shift();
+        }
+        for (const q of quanta) {
+          const ks = groups.get(q);
+          ctx.suspend((q * 128) / contextRate).then(async () => {
+            await Promise.all(ks.map(send));
+            ctx.resume();
+          });
+        }
+
+        const rendered = await ctx.startRendering();
+        const left = rendered.getChannelData(0);
+
+        // A clean 440 Hz tone moves at most this much per output sample; a cut
+        // to zero or a jump back from it moves several times more.
+        const amplitude = AMP / 127 / 2.5;
+        const maxSlope = (amplitude * 2 * Math.PI * FREQ) / contextRate;
+        const threshold = 3 * maxSlope + 2 / 127 / 2.5;
+        let pops = 0;
+        let lastPop = -Infinity;
+        let largestStep = 0;
+        for (let i = 1; i < left.length; i++) {
+          const step = Math.abs(left[i] - left[i - 1]);
+          largestStep = Math.max(largestStep, step);
+          if (step > threshold) {
+            // A click that spans a few samples is one click.
+            if (i - lastPop > 8) {
+              pops++;
+            }
+            lastPop = i;
+          }
+        }
+        return {
+          contextRate: ctx.sampleRate,
+          crossOriginIsolated: self.crossOriginIsolated === true,
+          pops,
+          largestStep,
+          threshold,
+          underrunFrames: lastStatus.underrunFrames || 0,
+          underrunEvents: lastStatus.underrunEvents,
+          droppedFrames: lastStatus.droppedFrames || 0,
+          finalTargetSeconds: lastStatus.targetLatencySeconds
         };
       };
     </script>
